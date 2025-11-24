@@ -1,13 +1,32 @@
 // index.js
+import mongoose from "mongoose";
 import express from "express";
 import dotenv from "dotenv";
 import cors from "cors";
+import Course from "./models/Course.js";
+import courseRoutes from "./routes/courseRoutes.js";
+import authRoutes from "./routes/authRoutes.js";
+
+
 
 dotenv.config();
+const MONGODB_URI = process.env.MONGODB_URI;
+
+if (!MONGODB_URI) {
+  console.error("❌ MONGODB_URI missing in .env");
+  process.exit(1);
+}
+
+mongoose
+  .connect(MONGODB_URI)
+  .then(() => console.log("✅ MongoDB connected"))
+  .catch(err => console.error("❌ MongoDB connection error:", err));
 
 const app = express();
 app.use(cors());
 app.use(express.json());
+app.use("/api/courses", courseRoutes);
+app.use("/api/auth", authRoutes);
 
 // 테스트용 기본 라우트
 app.get("/", (req, res) => {
@@ -15,6 +34,8 @@ app.get("/", (req, res) => {
 });
 
 // 서버 실행
-app.listen(4000, () => {
-  console.log("Server running on http://localhost:4000");
+
+const PORT = process.env.PORT || 4000;
+app.listen(PORT, () => {
+  console.log(`Server running on http://localhost:${PORT}`);
 });
