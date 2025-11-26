@@ -1,42 +1,135 @@
 // src/App.jsx
 import { useEffect, useState } from "react";
-import { Routes, Route, Link } from "react-router-dom";
+import {
+  Routes,
+  Route,
+  Link,
+  Outlet,
+  useNavigate,
+} from "react-router-dom";
 import CourseDetail from "./CourseDetail.jsx";
+import LoginPage from "./LoginPage.jsx";
+import RecommendPage from "./RecommendPage.jsx";
+import RandomPage from "./RandomPage.jsx";
+import { SEOUL_REGIONS } from "./data/regions";
+import "./App.css";
 
 const API_BASE_URL = "http://localhost:4000";
 
-function App() {
-  // 코스 관련 상태
+function getRegionLabel(cityId) {
+  if (!cityId) return "";
+  const region = SEOUL_REGIONS.find((r) => r.id === cityId);
+  return region ? region.label : cityId;
+}
+
+// 🔐 공통으로 로그인 정보 읽는 작은 훅
+function useAuth() {
+  const savedUser = localStorage.getItem("currentUser");
+  const currentUser = savedUser ? JSON.parse(savedUser) : null;
+  const token = localStorage.getItem("token");
+  const currentUserId = currentUser && (currentUser.id || currentUser._id);
+  const isLoggedIn = !!token && !!currentUser;
+  return { currentUser, token, currentUserId, isLoggedIn };
+}
+
+// ===================== 상단 레이아웃 (공통 헤더 + 네비게이션) =====================
+function Layout() {
+  const { currentUser, isLoggedIn } = useAuth();
+
+  const handleLogout = () => {
+    localStorage.removeItem("token");
+    localStorage.removeItem("currentUser");
+    window.location.href = "/";
+  };
+
+  return (
+    <div className="app">
+      <header className="app-header">
+        {/* ✅ 헤더도 app-inner 안에서만 정렬되도록 */}
+        <div className="app-inner">
+          <div className="header-top">
+            <div>
+              <h1 className="app-title">Course More Us</h1>
+              <p className="app-subtitle">나만의 데이트 / 코스 기록하기 📝</p>
+            </div>
+
+            <div className="auth-buttons">
+              {isLoggedIn ? (
+                <button
+                  className="btn btn-secondary btn-sm"
+                  onClick={handleLogout}
+                >
+                  로그아웃
+                </button>
+              ) : (
+                <Link to="/login" className="btn btn-secondary btn-sm">
+                  로그인
+                </Link>
+              )}
+            </div>
+          </div>
+
+          {/* 상단 네비게이션 바 */}
+          <nav className="app-nav">
+            <Link to="/" className="tab">
+              코스 보기
+            </Link>
+            <Link to="/recommend" className="tab">
+              추천받기
+            </Link>
+            <Link to="/random" className="tab">
+              랜덤코스
+            </Link>
+            <Link to="/new" className="tab">
+              코스 등록
+            </Link>
+            <Link to="/mypage" className="tab">
+              마이페이지
+            </Link>
+          </nav>
+
+          {/* 로그인 안내 문구 */}
+          <div style={{ marginTop: 4, fontSize: 13 }}>
+            {isLoggedIn ? (
+              <span>{currentUser?.email} 님, 환영해요 👋</span>
+            ) : (
+              <span>로그인하면 코스를 저장하고 관리할 수 있어요.</span>
+            )}
+          </div>
+        </div>
+      </header>
+
+      {/* 메인 컨텐츠도 공통 폭(app-inner) 안에서만 */}
+      <main className="app-main">
+        <div className="app-inner">
+          <Outlet />
+        </div>
+      </main>
+    </div>
+  );
+}
+
+// ===================== 페이지 1: 코스 목록 (코스 보기) =====================
+// ===================== 페이지 1: 코스 목록 (코스 보기) =====================
+function CourseListPage() {
+  const { currentUserId, token, isLoggedIn } = useAuth();
+
   const [courses, setCourses] = useState([]);
-  const [form, setForm] = useState({
-    title: "",
-    category: "",
-    description: "",
-    location: "",
-  });
+  const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  // 필터 상태
-  const [searchTerm, setSearchTerm] = useState("");
-  const [selectedCategory, setSelectedCategory] = useState("전체");
+  // 💜 내가 찜한 코스 id 목록
+  const [likedIds, setLikedIds] = useState([]);
+  const [loadingLikes, setLoadingLikes] = useState(false);
 
-  // 🔐 인증 관련 상태
-  const [currentUser, setCurrentUser] = useState(null); // {id, email}
-  const [token, setToken] = useState("");
-  const [authMode, setAuthMode] = useState("login"); // "login" or "register"
-  const [authForm, setAuthForm] = useState({ email: "", password: "" });
-  const [authError, setAuthError] = useState("");
-
-  // 코스 목록 불러오기
+  // 코스 목록 가져오기
   const fetchCourses = async () => {
     try {
       setLoading(true);
       setError("");
       const res = await fetch(`${API_BASE_URL}/api/courses`);
-      if (!res.ok) {
-        throw new Error("Failed to fetch courses");
-      }
+      if (!res.ok) throw new Error("Failed to fetch courses");
       const data = await res.json();
       setCourses(data);
     } catch (err) {
@@ -47,140 +140,48 @@ function App() {
     }
   };
 
-  // 처음 화면 렌더링 될 때 실행
-  useEffect(() => {
-    fetchCourses();
-
-    // 🔐 로컬스토리지에서 토큰/유저 복원
-    const savedToken = localStorage.getItem("cmu_token");
-    const savedUser = localStorage.getItem("cmu_user");
-    if (savedToken && savedUser) {
-      try {
-        const parsed = JSON.parse(savedUser);
-        setToken(savedToken);
-        setCurrentUser(parsed);
-      } catch (e) {
-        console.error("Failed to parse saved user", e);
-      }
-    }
-  }, []);
-
-  // 입력 폼 상태 업데이트
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-    setForm((prev) => ({
-      ...prev,
-      [name]: value,
-    }));
-  };
-
-  // 🔐 로그인/회원가입 폼 입력 상태 업데이트
-  const handleAuthChange = (e) => {
-    const { name, value } = e.target;
-    setAuthForm((prev) => ({
-      ...prev,
-      [name]: value,
-    }));
-  };
-
-  // 🔐 로그인/회원가입 요청 처리
-  const handleAuthSubmit = async (e) => {
-    e.preventDefault();
-    try {
-      setAuthError("");
-      const endpoint =
-        authMode === "login" ? "/api/auth/login" : "/api/auth/register";
-
-      const res = await fetch(`${API_BASE_URL}${endpoint}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(authForm),
-      });
-
-      const data = await res.json().catch(() => null);
-
-      if (!res.ok) {
-        throw new Error(data?.message || "인증에 실패했습니다.");
-      }
-
-      if (authMode === "register") {
-        // 회원가입 성공 → 로그인 탭으로 전환
-        alert("회원가입이 완료되었습니다. 이제 로그인 해주세요!");
-        setAuthMode("login");
-        setAuthForm((prev) => ({ email: prev.email, password: "" }));
-      } else {
-        // 로그인 성공 → 토큰/유저 저장
-        setToken(data.token);
-        setCurrentUser(data.user);
-        localStorage.setItem("cmu_token", data.token);
-        localStorage.setItem("cmu_user", JSON.stringify(data.user));
-        setAuthForm({ email: "", password: "" });
-      }
-    } catch (err) {
-      console.error(err);
-      setAuthError(err.message || "인증 중 오류가 발생했습니다.");
-    }
-  };
-
-  // 🔐 로그아웃
-  const handleLogout = () => {
-    setCurrentUser(null);
-    setToken("");
-    localStorage.removeItem("cmu_token");
-    localStorage.removeItem("cmu_user");
-  };
-
-  // 새 코스 등록
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-
-    // 🔐 로그인 안 했으면 막기
-    if (!token) {
-      alert("코스를 추가하려면 먼저 로그인 해주세요.");
+  // 💜 내가 찜한 코스 목록 가져오기
+  const fetchLikedCourses = async () => {
+    if (!isLoggedIn) {
+      setLikedIds([]);
       return;
     }
-
     try {
-      setLoading(true);
-      setError("");
-
-      const res = await fetch(`${API_BASE_URL}/api/courses`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          // 나중에 백엔드에서 토큰 검사 붙이기 좋게 미리 보내두기
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(form),
+      setLoadingLikes(true);
+      const res = await fetch(`${API_BASE_URL}/api/courses/liked/me`, {
+        headers: { Authorization: `Bearer ${token}` },
       });
+      const data = await res.json().catch(() => []);
 
-      if (!res.ok) {
-        throw new Error("Failed to create course");
-      }
+      if (!res.ok) throw new Error(data?.message || "찜 목록 조회 실패");
 
-      const created = await res.json();
-
-      setCourses((prev) => [created, ...prev]);
-
-      setForm({
-        title: "",
-        category: "",
-        description: "",
-        location: "",
-      });
+      const ids = Array.isArray(data) ? data.map((c) => String(c._id)) : [];
+      setLikedIds(ids);
     } catch (err) {
-      console.error(err);
-      setError("코스를 생성하는 데 실패했어요.");
+      console.error("fetchLikedCourses error:", err);
+      // 에러는 크게 알림 안 띄우고 조용히 무시
     } finally {
-      setLoading(false);
+      setLoadingLikes(false);
     }
   };
 
-  // 코스 삭제
+  useEffect(() => {
+    fetchCourses();
+  }, []);
+
+  useEffect(() => {
+    fetchLikedCourses();
+  }, [isLoggedIn, token]);
+
+  // 검색 (제목 기준)
+  const filteredCourses = courses.filter((course) =>
+    course.title.toLowerCase().includes(search.toLowerCase())
+  );
+
+  // 삭제
   const handleDelete = async (id) => {
-    // 🔐 로그인 안 했으면 막기
-    if (!token) {
-      alert("코스를 삭제하려면 먼저 로그인 해주세요.");
+    if (!isLoggedIn) {
+      alert("로그인이 필요합니다.");
       return;
     }
 
@@ -199,10 +200,14 @@ function App() {
       });
 
       if (!res.ok) {
-        throw new Error("Failed to delete course");
+        const data = await res.json().catch(() => ({}));
+        alert(data.message || "삭제 실패 😢");
+        return;
       }
 
       setCourses((prev) => prev.filter((c) => c._id !== id));
+      // 삭제된 코스가 찜 목록에 있었다면 제거
+      setLikedIds((prev) => prev.filter((cid) => cid !== id));
     } catch (err) {
       console.error(err);
       setError("코스를 삭제하는 데 실패했어요.");
@@ -211,244 +216,731 @@ function App() {
     }
   };
 
-  // 카테고리 목록
-  const categories = [
-    "전체",
-    ...Array.from(new Set(courses.map((c) => c.category))),
-  ];
+  // 💜 리스트에서 바로 찜 토글
+  const handleToggleLike = async (courseId) => {
+    if (!isLoggedIn) {
+      alert("로그인 후 찜할 수 있어요.");
+      return;
+    }
 
-  // 검색 + 카테고리 필터 적용된 코스 목록
-  const filteredCourses = courses.filter((course) => {
-    const matchesCategory =
-      selectedCategory === "전체" || course.category === selectedCategory;
+    try {
+      const res = await fetch(
+        `${API_BASE_URL}/api/courses/${courseId}/like`,
+        {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
 
-    const q = searchTerm.trim().toLowerCase();
-    const matchesSearch =
-      q === "" ||
-      course.title.toLowerCase().includes(q) ||
-      course.description.toLowerCase().includes(q) ||
-      course.location.toLowerCase().includes(q);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || "찜 처리 실패");
 
-    return matchesCategory && matchesSearch;
-  });
+      // 서버에서 { liked: true/false } 돌려준다고 가정
+      if (data.liked) {
+        setLikedIds((prev) => {
+          const idStr = String(courseId);
+          if (prev.includes(idStr)) return prev;
+          return [...prev, idStr];
+        });
+      } else {
+        setLikedIds((prev) =>
+          prev.filter((cid) => cid !== String(courseId))
+        );
+      }
+    } catch (err) {
+      console.error("toggle like error:", err);
+      alert(err.message || "찜 처리 중 오류가 발생했어요.");
+    }
+  };
 
   return (
-    <Routes>
-      {/* 메인(목록) 페이지 */}
-      <Route
-        path="/"
-        element={
-          <div className="app">
-            <header className="app-header">
-              <h1 className="app-title">Course More Us</h1>
-              <p className="app-subtitle">나만의 데이트 / 코스 기록하기 📝</p>
-            </header>
+    <section className="section-list">
+      <h2 className="section-title">저장된 코스들</h2>
 
-            {/* 🔐 로그인/회원가입 카드 */}
-            <section className="card auth-card">
-              {currentUser ? (
-                <div className="auth-info">
-                  <div>
-                    <span className="text-muted">로그인 계정</span>
-                    <div>{currentUser.email}</div>
-                  </div>
-                  <button className="btn btn-secondary btn-sm" onClick={handleLogout}>
-                    로그아웃
-                  </button>
-                </div>
-              ) : (
-                <>
-                  <div className="auth-toggle">
-                    <button
-                      type="button"
-                      className={authMode === "login" ? "active" : ""}
-                      onClick={() => setAuthMode("login")}
-                    >
-                      로그인
-                    </button>
-                    <button
-                      type="button"
-                      className={authMode === "register" ? "active" : ""}
-                      onClick={() => setAuthMode("register")}
-                    >
-                      회원가입
-                    </button>
-                  </div>
-                  <form className="auth-form" onSubmit={handleAuthSubmit}>
-                    <input
-                      className="input"
-                      name="email"
-                      type="email"
-                      placeholder="이메일"
-                      value={authForm.email}
-                      onChange={handleAuthChange}
-                      required
-                    />
-                    <input
-                      className="input"
-                      name="password"
-                      type="password"
-                      placeholder="비밀번호"
-                      value={authForm.password}
-                      onChange={handleAuthChange}
-                      required
-                    />
-                    {authError && (
-                      <p className="text-muted" style={{ color: "#b91c1c" }}>
-                        {authError}
-                      </p>
-                    )}
-                    <button className="btn btn-primary btn-sm" type="submit">
-                      {authMode === "login" ? "로그인" : "회원가입"}
-                    </button>
-                  </form>
-                </>
-              )}
-            </section>
+      {error && <div className="alert alert-error">{error}</div>}
 
-            {/* 에러 메시지 (코스 관련) */}
-            {error && <div className="alert alert-error">{error}</div>}
-
-            {/* 새 코스 등록 폼 */}
-            <section className="card card-form">
-              <h2 className="section-title">새 코스 추가하기</h2>
-              {!currentUser && (
-                <p className="text-muted" style={{ marginBottom: 8 }}>
-                  코스를 추가하려면 먼저 로그인 해주세요.
-                </p>
-              )}
-              <form className="course-form" onSubmit={handleSubmit}>
-                <input
-                  className="input"
-                  name="title"
-                  placeholder="코스 제목 (예: 홍대 감성 데이트)"
-                  value={form.title}
-                  onChange={handleChange}
-                  required
-                />
-                <div className="form-row">
-                  <input
-                    className="input"
-                    name="category"
-                    placeholder="카테고리 (예: 데이트, 혼놀, 가족...)"
-                    value={form.category}
-                    onChange={handleChange}
-                    required
-                  />
-                  <input
-                    className="input"
-                    name="location"
-                    placeholder="위치 (예: 서울 홍대)"
-                    value={form.location}
-                    onChange={handleChange}
-                    required
-                  />
-                </div>
-                <textarea
-                  className="textarea"
-                  name="description"
-                  placeholder="코스 설명 (간단한 동선, 가게 이름 등)"
-                  value={form.description}
-                  onChange={handleChange}
-                  rows={3}
-                  required
-                />
-                <button
-                  className="btn btn-primary"
-                  type="submit"
-                  disabled={loading || !currentUser}
-                >
-                  {loading ? "저장 중..." : "코스 추가하기"}
-                </button>
-              </form>
-            </section>
-
-            {/* 코스 리스트 + 필터 */}
-            <section className="section-list">
-              <h2 className="section-title">저장된 코스들</h2>
-
-              {/* 검색 + 카테고리 필터 UI */}
-              <div className="filters">
-                <input
-                  className="input filter-search"
-                  type="text"
-                  placeholder="제목, 설명, 위치로 검색"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                />
-
-                <div className="filter-chips">
-                  {categories.map((cat) => (
-                    <button
-                      key={cat}
-                      type="button"
-                      className={
-                        "chip" +
-                        (selectedCategory === cat ? " chip-active" : "")
-                      }
-                      onClick={() => setSelectedCategory(cat)}
-                    >
-                      {cat}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {loading && courses.length === 0 && (
-                <p className="text-muted">불러오는 중...</p>
-              )}
-
-              {!loading && courses.length === 0 ? (
-                <p className="text-muted">
-                  아직 저장된 코스가 없어요. 하나 추가해볼까요?
-                </p>
-              ) : !loading &&
-                courses.length > 0 &&
-                filteredCourses.length === 0 ? (
-                <p className="text-muted">
-                  검색/필터 조건에 맞는 코스가 없어요.
-                </p>
-              ) : (
-                <ul className="course-list">
-                  {filteredCourses.map((course) => (
-                    <li key={course._id} className="card course-card">
-                      <Link
-                        to={`/course/${course._id}`}
-                        className="course-card-link"
-                      >
-                        <div className="course-card-header">
-                          <h3 className="course-title">{course.title}</h3>
-                          <span className="badge">{course.category}</span>
-                        </div>
-                        <div className="course-meta">
-                          <span>📍 {course.location}</span>
-                        </div>
-                        <p className="course-description">
-                          {course.description}
-                        </p>
-                      </Link>
-
-                      <div className="course-actions">
-                        <button
-                          type="button"
-                          className="btn btn-danger btn-sm"
-                          onClick={() => handleDelete(course._id)}
-                          disabled={!currentUser}
-                        >
-                          삭제
-                        </button>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
-          </div>
-        }
+      <input
+        className="input"
+        placeholder="제목으로 검색"
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        style={{ marginBottom: 12 }}
       />
 
-      {/* 코스 상세 페이지 */}
-      <Route path="/course/:id" element={<CourseDetail />} />
+      {(loading || loadingLikes) && (
+        <p className="text-muted">불러오는 중...</p>
+      )}
+
+      {courses.length === 0 ? (
+        <p className="text-muted">저장된 코스가 없어요.</p>
+      ) : filteredCourses.length === 0 ? (
+        <p className="text-muted">검색 결과가 없습니다.</p>
+      ) : (
+        <ul className="course-list">
+          {filteredCourses.map((course) => {
+            const regionLabel = getRegionLabel(course.city);
+            const hasSteps =
+              Array.isArray(course.steps) && course.steps.length > 0;
+            const firstStep = hasSteps ? course.steps[0] : null;
+
+            const isOwner =
+              currentUserId && currentUserId === String(course.owner);
+            const isLiked = likedIds.includes(String(course._id));
+
+            return (
+              <li key={course._id} className="card course-card">
+                {/* 제목 + 지역 */}
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    marginBottom: 6,
+                  }}
+                >
+                  <h3
+                    className="course-title"
+                    style={{ margin: 0, fontSize: 20 }}
+                  >
+                    {course.title}
+                  </h3>
+
+                  {/* 💜 리스트에서 바로 찜 버튼 */}
+                  {isLoggedIn && (
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => handleToggleLike(course._id)}
+                    >
+                      {isLiked ? "💜" : "🤍"}
+                    </button>
+                  )}
+                </div>
+
+                <p style={{ color: "#666", marginBottom: 8, fontSize: 13 }}>
+                  📍 {regionLabel} ·{" "}
+                  {hasSteps
+                    ? `총 ${course.steps.length}단계 코스`
+                    : "단계 정보 없음"}
+                </p>
+
+                {/* 대표 단계 1개 보여주기 */}
+                {firstStep && (
+                  <p style={{ marginBottom: 12, fontSize: 13 }}>
+                    ⭐ 1단계: {firstStep.place}
+                  </p>
+                )}
+
+                {/* 버튼들 */}
+                <div
+                  className="course-actions"
+                  style={{ display: "flex", gap: 8, marginTop: 4 }}
+                >
+                  <Link
+                    to={`/courses/${course._id}`}
+                    className="btn btn-secondary btn-sm"
+                  >
+                    상세 보기
+                  </Link>
+
+                  {isOwner && (
+                    <button
+                      type="button"
+                      className="btn btn-danger btn-sm"
+                      onClick={() => handleDelete(course._id)}
+                    >
+                      삭제
+                    </button>
+                  )}
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+// ===================== 페이지 2: 코스 등록 =====================
+function NewCoursePage() {
+  const { token, isLoggedIn } = useAuth();
+  const navigate = useNavigate();
+
+  // 서울 지역 선택용
+  const [title, setTitle] = useState("");
+  const [cityId, setCityId] = useState(SEOUL_REGIONS[0].id); // 기본값: 첫 번째 지역
+
+  // 단계들 (최대 4개). 처음엔 2~3단계 제공
+  const [steps, setSteps] = useState([
+    { title: "1단계", place: "",  memo: "", time: "", budget: "" },
+    { title: "2단계", place: "", memo: "", time: "", budget: "" },
+  ]);
+
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const handleStepChange = (index, field, value) => {
+    setSteps((prev) =>
+      prev.map((step, i) =>
+        i === index ? { ...step, [field]: value } : step
+      )
+    );
+  };
+
+  const addStep = () => {
+    if (steps.length >= 4) return;
+    const nextIndex = steps.length + 1;
+    setSteps((prev) => [
+      ...prev,
+      { title: `${nextIndex}단계`, place: "", memo: "", time: "", budget: "" },
+    ]);
+  };
+
+  const removeStep = (index) => {
+    if (steps.length <= 1) return; // 최소 1단계는 남겨두기
+    setSteps((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError("");
+
+    if (!isLoggedIn) {
+      alert("로그인 후 코스를 등록할 수 있어요.");
+      return;
+    }
+
+    if (!title.trim() || !cityId) {
+      setError("제목과 도시를 모두 입력해 주세요.");
+      return;
+    }
+
+    // place가 비어있는 단계는 제외
+    const cleanedSteps = steps
+      .map((s) => ({
+        ...s,
+        budget: s.budget ? Number(s.budget) : 0,
+      }))
+      .filter((s) => s.place.trim() !== "");
+
+    if (cleanedSteps.length === 0) {
+      setError("최소 1개 이상의 단계에 장소를 입력해 주세요.");
+      return;
+    }
+    if (cleanedSteps.length > 4) {
+      setError("코스는 최대 4단계까지만 등록할 수 있어요.");
+      return;
+    }
+
+    try {
+      setLoading(true);
+
+      const res = await fetch(`${API_BASE_URL}/api/courses`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          title,
+          city: cityId,      // 🔥 여기! region id를 city 필드로 보냄
+          steps: cleanedSteps,
+        }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        throw new Error(data.message || "코스 등록 실패");
+      }
+
+      alert("코스가 등록되었습니다!");
+
+      // 폼 초기화
+      setTitle("");
+      setCityId(SEOUL_REGIONS[0].id);
+      setSteps([
+        { title: "1단계", place: "", memo: "", time: "", budget: "" },
+        { title: "2단계", place: "", memo: "", time: "", budget: "" },
+      ]);
+
+      navigate("/");
+    } catch (err) {
+      console.error(err);
+      setError(err.message || "코스를 등록하는 데 실패했어요.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <section className="card card-form">
+      <h2 className="section-title">새 코스 등록하기</h2>
+
+      {error && <div className="alert alert-error">{error}</div>}
+
+      <form className="course-form" onSubmit={handleSubmit}>
+        {/* 기본 정보 */}
+        <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+          <input
+            className="input"
+            name="title"
+            placeholder="코스 제목 (예: 홍대 감성 데이트)"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            required
+            disabled={!isLoggedIn}
+          />
+        </div>
+
+        <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+          <select
+            className="input"
+            value={cityId}
+            onChange={(e) => setCityId(e.target.value)}
+            disabled={!isLoggedIn}
+          >
+            {SEOUL_REGIONS.map((region) => (
+              <option key={region.id} value={region.id}>
+                {region.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div style={{ marginBottom: 8 }}>
+          <p style={{ fontSize: 13, color: "#666" }}>
+            데이트 코스를 2–4단계로 나눠서 작성해 주세요. (최대 4단계)
+          </p>
+        </div>
+
+        {/* 단계 입력 */}
+        {steps.map((step, index) => (
+          <div
+            key={index}
+            className="card"
+            style={{ padding: 12, marginBottom: 8 }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: 8,
+              }}
+            >
+              <strong>{step.title}</strong>
+              {steps.length > 1 && (
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => removeStep(index)}
+                >
+                  단계 삭제
+                </button>
+              )}
+            </div>
+
+            <input
+              className="input"
+              placeholder="장소 이름 (예: ○○카페)"
+              value={step.place}
+              onChange={(e) =>
+                handleStepChange(index, "place", e.target.value)
+              }
+              disabled={!isLoggedIn}
+              required={index === 0}
+            />
+
+            <input
+              className="input"
+              placeholder="시간 (예: 14:00)"
+              value={step.time}
+              onChange={(e) =>
+                handleStepChange(index, "time", e.target.value)
+              }
+              disabled={!isLoggedIn}
+              style={{ marginTop: 6 }}
+            />
+
+            <input
+              className="input"
+              placeholder="예산 (원, 선택)"
+              value={step.budget}
+              onChange={(e) =>
+                handleStepChange(index, "budget", e.target.value)
+              }
+              disabled={!isLoggedIn}
+              style={{ marginTop: 6 }}
+            />
+
+            <textarea
+              className="textarea"
+              placeholder="메모 (이 코스에 대한 간단한 설명)"
+              value={step.memo}
+              onChange={(e) =>
+                handleStepChange(index, "memo", e.target.value)
+              }
+              rows={2}
+              disabled={!isLoggedIn}
+              style={{ marginTop: 6 }}
+            />
+          </div>
+        ))}
+
+        {/* 단계 추가 버튼 */}
+        <button
+          type="button"
+          className="btn btn-secondary"
+          onClick={addStep}
+          disabled={!isLoggedIn || steps.length >= 4}
+          style={{ marginTop: 4, marginBottom: 12 }}
+        >
+          {steps.length >= 4
+            ? "최대 4단계까지 추가 가능"
+            : "단계 추가하기"}
+        </button>
+
+        {/* 제출 버튼 */}
+        <button
+          className="btn btn-primary"
+          type="submit"
+          disabled={loading || !isLoggedIn}
+        >
+          {isLoggedIn
+            ? loading
+              ? "저장 중..."
+              : "코스 등록하기"
+            : "로그인 후 등록 가능"}
+        </button>
+      </form>
+    </section>
+  );
+}
+
+// ===================== 페이지 3: 마이페이지 (기본 틀만) =====================
+// ===================== 페이지 3: 마이페이지 (내 코스 / 찜 / 최근 본 코스) =====================
+function MyPage() {
+  const { currentUser, isLoggedIn, token } = useAuth();
+
+  const [myCourses, setMyCourses] = useState([]);
+  const [likedCourses, setLikedCourses] = useState([]);
+  const [recentCourses, setRecentCourses] = useState([]);
+
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  // 현재 선택된 탭: mine | liked | recent
+  const [tab, setTab] = useState("mine");
+
+  useEffect(() => {
+    if (!isLoggedIn) return;
+
+    const fetchAll = async () => {
+      try {
+        setLoading(true);
+        setError("");
+
+        // 세 가지를 동시에 요청
+        const [myRes, likedRes, recentRes] = await Promise.all([
+          fetch(`${API_BASE_URL}/api/courses/mine`, {
+            headers: { Authorization: `Bearer ${token}` },
+          }),
+          fetch(`${API_BASE_URL}/api/courses/liked/me`, {
+            headers: { Authorization: `Bearer ${token}` },
+          }),
+          fetch(`${API_BASE_URL}/api/courses/recent/me`, {
+            headers: { Authorization: `Bearer ${token}` },
+          }),
+        ]);
+
+        const [myData, likedData, recentData] = await Promise.all([
+          myRes.json().catch(() => []),
+          likedRes.json().catch(() => []),
+          recentRes.json().catch(() => []),
+        ]);
+
+        if (!myRes.ok) throw new Error(myData?.message || "내 코스 목록 조회 실패");
+        if (!likedRes.ok)
+          throw new Error(likedData?.message || "찜한 코스 목록 조회 실패");
+        if (!recentRes.ok)
+          throw new Error(recentData?.message || "최근 본 코스 목록 조회 실패");
+
+        setMyCourses(Array.isArray(myData) ? myData : []);
+        setLikedCourses(Array.isArray(likedData) ? likedData : []);
+        setRecentCourses(Array.isArray(recentData) ? recentData : []);
+      } catch (err) {
+        console.error(err);
+        setError(err.message || "마이페이지 데이터를 불러오는 데 실패했어요.");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchAll();
+  }, [isLoggedIn, token]);
+
+  // 🔐 로그인 안 한 경우
+  if (!isLoggedIn) {
+    return (
+      <section className="card">
+        <h2 className="section-title">마이페이지</h2>
+        <p>로그인 후 이용할 수 있어요.</p>
+        <Link to="/login" className="btn btn-primary" style={{ marginTop: 12 }}>
+          로그인하러 가기
+        </Link>
+      </section>
+    );
+  }
+
+  // ===== 탭별 렌더링 함수들 =====
+  const renderMyCourses = () => {
+    if (loading) return <p>불러오는 중...</p>;
+    if (error) return <p style={{ color: "red" }}>{error}</p>;
+    if (!myCourses.length)
+      return <p className="text-muted">아직 내가 만든 코스가 없어요.</p>;
+
+    return myCourses.map((course) => {
+      const hasSteps = Array.isArray(course.steps) && course.steps.length > 0;
+      const regionLabel = getRegionLabel(course.city);
+
+      return (
+        <div key={course._id} className="card" style={{ padding: 12 }}>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              marginBottom: 4,
+            }}
+          >
+            <h4 style={{ fontSize: 15 }}>{course.title}</h4>
+            {hasSteps && (
+              <span style={{ fontSize: 12, color: "#6b7280" }}>
+                총 {course.steps.length}단계
+              </span>
+            )}
+          </div>
+
+          <p style={{ fontSize: 13, color: "#6b7280", marginBottom: 4 }}>
+            {regionLabel && `📍 ${regionLabel}`}
+          </p>
+
+          <p style={{ fontSize: 13, color: "#6b7280", marginBottom: 6 }}>
+            {hasSteps
+              ? course.steps
+                  .map((s) => s.place)
+                  .filter(Boolean)
+                  .join(" → ")
+              : "등록된 단계 정보가 없습니다."}
+          </p>
+
+          <div style={{ display: "flex", gap: 8 }}>
+            <Link
+              to={`/courses/${course._id}`}
+              className="btn btn-secondary btn-sm"
+            >
+              상세 보기
+            </Link>
+          </div>
+        </div>
+      );
+    });
+  };
+
+  const renderLikedCourses = () => {
+    if (loading) return <p>불러오는 중...</p>;
+    if (error) return <p style={{ color: "red" }}>{error}</p>;
+    if (!likedCourses.length)
+      return <p className="text-muted">아직 찜한 코스가 없어요.</p>;
+
+    return likedCourses.map((course) => {
+      const hasSteps = Array.isArray(course.steps) && course.steps.length > 0;
+      const regionLabel = getRegionLabel(course.city);
+
+      return (
+        <div key={course._id} className="card" style={{ padding: 12 }}>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              marginBottom: 4,
+            }}
+          >
+            <h4 style={{ fontSize: 15 }}>{course.title}</h4>
+            {hasSteps && (
+              <span style={{ fontSize: 12, color: "#6b7280" }}>
+                총 {course.steps.length}단계
+              </span>
+            )}
+          </div>
+
+          <p style={{ fontSize: 13, color: "#6b7280", marginBottom: 4 }}>
+            {regionLabel && `📍 ${regionLabel}`}
+          </p>
+
+          <p style={{ fontSize: 13, color: "#6b7280", marginBottom: 6 }}>
+            {hasSteps
+              ? course.steps
+                  .map((s) => s.place)
+                  .filter(Boolean)
+                  .join(" → ")
+              : "등록된 단계 정보가 없습니다."}
+          </p>
+
+          <div style={{ display: "flex", gap: 8 }}>
+            <Link
+              to={`/courses/${course._id}`}
+              className="btn btn-secondary btn-sm"
+            >
+              상세 보기
+            </Link>
+          </div>
+        </div>
+      );
+    });
+  };
+
+  const renderRecentCourses = () => {
+    if (loading) return <p>불러오는 중...</p>;
+    if (error) return <p style={{ color: "red" }}>{error}</p>;
+    if (!recentCourses.length)
+      return <p className="text-muted">아직 최근 본 코스가 없어요.</p>;
+
+    return recentCourses.map((course) => {
+      const hasSteps = Array.isArray(course.steps) && course.steps.length > 0;
+      const regionLabel = getRegionLabel(course.city);
+
+      return (
+        <div key={course._id} className="card" style={{ padding: 12 }}>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              marginBottom: 4,
+            }}
+          >
+            <h4 style={{ fontSize: 15 }}>{course.title}</h4>
+            {hasSteps && (
+              <span style={{ fontSize: 12, color: "#6b7280" }}>
+                총 {course.steps.length}단계
+              </span>
+            )}
+          </div>
+
+          <p style={{ fontSize: 13, color: "#6b7280", marginBottom: 4 }}>
+            {regionLabel && `📍 ${regionLabel}`}
+          </p>
+
+          <p style={{ fontSize: 13, color: "#6b7280", marginBottom: 6 }}>
+            {hasSteps
+              ? course.steps
+                  .map((s) => s.place)
+                  .filter(Boolean)
+                  .join(" → ")
+              : "등록된 단계 정보가 없습니다."}
+          </p>
+
+          <div style={{ display: "flex", gap: 8 }}>
+            <Link
+              to={`/courses/${course._id}`}
+              className="btn btn-secondary btn-sm"
+            >
+              상세 보기
+            </Link>
+          </div>
+        </div>
+      );
+    });
+  };
+
+  // ===== 실제 화면 =====
+  return (
+    <section className="card">
+      <h2 className="section-title">마이페이지</h2>
+      <p style={{ fontSize: 14, color: "#6b7280" }}>
+        이메일: {currentUser?.email}
+      </p>
+
+      {/* 상단 탭 영역 */}
+      <div
+        style={{
+          marginTop: 16,
+          marginBottom: 12,
+          display: "flex",
+          gap: 8,
+        }}
+      >
+        <button
+          type="button"
+          className={
+            "tab" + (tab === "mine" ? " tab-active" : "")
+          }
+          onClick={() => setTab("mine")}
+        >
+          내 코스
+        </button>
+        <button
+          type="button"
+          className={
+            "tab" + (tab === "liked" ? " tab-active" : "")
+          }
+          onClick={() => setTab("liked")}
+        >
+          찜한 코스
+        </button>
+        <button
+          type="button"
+          className={
+            "tab" + (tab === "recent" ? " tab-active" : "")
+          }
+          onClick={() => setTab("recent")}
+        >
+          최근 본 코스
+        </button>
+      </div>
+
+      {/* 탭별 내용 */}
+      <div
+        style={{
+          marginTop: 4,
+          display: "flex",
+          flexDirection: "column",
+          gap: 12,
+        }}
+      >
+        {tab === "mine" && renderMyCourses()}
+        {tab === "liked" && renderLikedCourses()}
+        {tab === "recent" && renderRecentCourses()}
+      </div>
+    </section>
+  );
+}
+
+// ===================== 최상위 라우터 =====================
+function App() {
+  return (
+    <Routes>
+      {/* 공통 레이아웃 */}
+      <Route path="/" element={<Layout />}>
+        {/* index: 코스 목록 */}
+        <Route index element={<CourseListPage />} />
+        {/* 코스 등록 */}
+        <Route path="new" element={<NewCoursePage />} />
+        {/* 마이페이지 */}
+        <Route path="mypage" element={<MyPage />} />
+        {/* 코스 상세 */}
+        <Route path="courses/:id" element={<CourseDetail />} />
+      </Route>
+
+      {/* 로그인은 레이아웃 없이 단독 페이지 */}
+      <Route path="/login" element={<LoginPage />} />
+      <Route path="recommend" element={<RecommendPage />} />
+      <Route path="random" element={<RandomPage />} />
+
     </Routes>
   );
 }

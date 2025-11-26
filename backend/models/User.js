@@ -14,6 +14,21 @@ const userSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
+    favorites: [
+    { type: mongoose.Schema.Types.ObjectId, ref: "Course" }
+  ],
+    likedCourses: [
+    {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Course",
+    },
+  ],
+  recentCourses: [
+    {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Course",
+    },
+  ],
   },
   { timestamps: true }
 );
