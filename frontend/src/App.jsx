@@ -13,7 +13,7 @@ import RecommendPage from "./RecommendPage.jsx";
 import RandomPage from "./RandomPage.jsx";
 import { SEOUL_REGIONS } from "./data/regions";
 import "./App.css";
-
+import AutoCourseDetail from "./AutoCourseDetail";
 const API_BASE_URL = "http://localhost:4000";
 
 function getRegionLabel(cityId) {
@@ -934,6 +934,8 @@ function App() {
         <Route path="mypage" element={<MyPage />} />
         {/* 코스 상세 */}
         <Route path="courses/:id" element={<CourseDetail />} />
+        <Route path="/courses/:id" element={<CourseDetail />} />
+        <Route path="/auto-courses/:autoId" element={<AutoCourseDetail />} />
       </Route>
 
       {/* 로그인은 레이아웃 없이 단독 페이지 */}

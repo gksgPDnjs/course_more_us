@@ -8,6 +8,7 @@ const router = express.Router();
 
 /**
  * 코스 생성: POST /api/courses
+ * (사용자가 직접 만든 코스)
  */
 router.post("/", authMiddleware, async (req, res) => {
   try {
@@ -38,6 +39,7 @@ router.post("/", authMiddleware, async (req, res) => {
       steps,
       owner: req.user.userId,
       approved: false,
+      sourceType: "user",
     });
 
     res.status(201).json(course);
@@ -107,6 +109,75 @@ router.get("/recent/me", authMiddleware, async (req, res) => {
   } catch (error) {
     console.error("get recent courses error:", error);
     res.status(500).json({ message: "최근 본 코스 목록 조회 실패" });
+  }
+});
+
+/**
+ * 🔥 자동 생성 코스 저장: POST /api/courses/auto
+ * - 추천 페이지에서 카카오 기반으로 만든 코스를 저장
+ * - 로그인 필요 (authMiddleware)
+ * - 저장된 코스는 sourceType: "auto" 로 구분됨
+ */
+router.post("/auto", authMiddleware, async (req, res) => {
+  try {
+    const { title, city, mood, steps } = req.body;
+
+    if (!title || !city || !Array.isArray(steps) || steps.length === 0) {
+      return res
+        .status(400)
+        .json({ message: "title, city, steps 는 필수입니다." });
+    }
+
+    // 프론트에서 오는 step 구조를 안전하게 매핑
+    const mappedSteps = steps.map((step) => {
+      const placeObj = step.place || step; // { place_name, road_address_name, ... } 또는 그냥 문자열
+
+      const placeName =
+        placeObj.place_name ||
+        placeObj.name ||
+        placeObj.place ||
+        step.place ||
+        "장소 이름 없음";
+
+      const address =
+        placeObj.road_address_name ||
+        placeObj.address_name ||
+        placeObj.address ||
+        "";
+
+      const kakaoPlaceId = placeObj.id || "";
+      const kakaoUrl = placeObj.place_url || "";
+
+      return {
+        title: step.title || step.label || step.type || "코스",
+        place: placeName,
+        memo: step.memo || "",
+        time: step.time || "",
+        budget: step.budget ?? 0,
+        address,
+        kakaoPlaceId,
+        kakaoUrl,
+      };
+    });
+
+    const course = new Course({
+      title,
+      city,
+      mood: mood || "자동 생성",
+      steps: mappedSteps,
+      owner: req.user.userId,          // 이 자동 코스를 만든(뽑은) 사용자
+      sourceType: "auto",              // 자동 생성 코스 표시
+      generatedFrom: `kakao:${city}`,  // 어디서 생성됐는지 기록용
+      approved: true,                  // 자동 코스는 바로 사용 가능하게 true
+    });
+
+    const saved = await course.save();
+    return res.status(201).json(saved);
+  } catch (error) {
+    console.error("auto course create error:", error);
+    res
+      .status(500)
+      .json({ message: "자동 코스를 저장하는 중 오류가 발생했습니다." });
   }
 });
 
