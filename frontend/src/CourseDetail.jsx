@@ -3,7 +3,6 @@ import { useParams, Link } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { SEOUL_REGIONS } from "./data/regions";
 import { fetchUnsplashHero } from "./api/unsplash";
-import { REGION_UNSPLASH_KEYWORD } from "./api/unsplashRegions";
 import { buildUnsplashKeyword } from "./api/unsplashKeyword";
 
 const API_BASE_URL = "http://localhost:4000";
@@ -13,6 +12,41 @@ function getRegionLabel(cityId) {
   if (!cityId) return "";
   const region = SEOUL_REGIONS.find((r) => r.id === cityId);
   return region ? region.label : cityId;
+}
+
+// 🔎 스텝 정보 정리 + 카카오맵 URL 보정
+function getStepInfo(step) {
+  if (!step) {
+    return {
+      name: "장소 미입력",
+      addr: "",
+      url: "",
+      time: "",
+      budget: 0,
+      memo: "",
+    };
+  }
+
+  const name = step.place || step.title || "장소 미입력";
+  const addr = step.address || "";
+
+  // 1순위: DB에 저장된 kakaoUrl
+  let url = step.kakaoUrl || step.url || "";
+
+  // 2순위: kakaoPlaceId 가 있으면 Kakao place URL 재구성
+  const placeId = step.kakaoPlaceId || step.placeId;
+  if (!url && placeId) {
+    url = `https://place.map.kakao.com/${placeId}`;
+  }
+
+  return {
+    name,
+    addr,
+    url,
+    time: step.time || "",
+    budget: step.budget ?? 0,
+    memo: step.memo || "",
+  };
 }
 
 function CourseDetail() {
@@ -38,7 +72,7 @@ function CourseDetail() {
   const isOwner =
     !!currentUserId && course && String(currentUserId) === String(course.owner);
 
-  // 🔥 대표 이미지 (Unsplash)
+  // 🎨 대표 이미지 (Unsplash)
   const [heroUrl, setHeroUrl] = useState(null);
   const [heroLoading, setHeroLoading] = useState(false);
 
@@ -196,8 +230,7 @@ function CourseDetail() {
   }, [id]);
 
   /* --------------------------------------
-     🔥 Unsplash용 검색어 조합 로직 
-     (지역 키워드 + mood + category)
+     🔥 Unsplash용 검색어 + 대표 이미지 로딩
   -------------------------------------- */
   useEffect(() => {
     if (!course) return;
@@ -211,8 +244,6 @@ function CourseDetail() {
       console.log("🎨 CourseDetail에서 받은 heroUrl:", url);
       setHeroUrl(url);
       setHeroLoading(false);
-
-    
     }
 
     loadHero();
@@ -241,23 +272,80 @@ function CourseDetail() {
 
   const regionLabel = getRegionLabel(course.city || course.location);
   const hasSteps = Array.isArray(course.steps) && course.steps.length > 0;
+  const totalSteps = hasSteps ? course.steps.length : 0;
 
   return (
-    <div className="app">
-      <Link to="/" className="btn btn-secondary" style={{ marginBottom: 12 }}>
-        ← 목록으로
-      </Link>
+    <section className="card" style={{ padding: 20 }}>
+      {/* 상단 헤더 */}
+      <header
+        style={{
+          marginBottom: 16,
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          gap: 12,
+        }}
+      >
+        <div>
+          <h2 className="section-title" style={{ marginBottom: 8 }}>
+            {course.title}
+          </h2>
+          <p style={{ fontSize: 14, color: "#6b7280" }}>
+            {regionLabel && <>📍 {regionLabel}</>}{" "}
+            {hasSteps && <>· 총 {totalSteps}단계 코스</>}
+          </p>
+        </div>
+
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {token && (
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              onClick={handleToggleLike}
+              disabled={likeLoading}
+              style={{
+                minWidth: 96,
+                backgroundColor: liked ? "#f97373" : "white",
+                color: liked ? "white" : "#111827",
+                borderColor: liked ? "#f97373" : "#e5e7eb",
+              }}
+            >
+              {liked ? "💜 찜해둔 코스" : "🤍 찜하기"}
+            </button>
+          )}
+
+          {isOwner && (
+            <button
+              className="btn btn-danger btn-sm"
+              onClick={handleDelete}
+              style={{ minWidth: 80 }}
+            >
+              삭제
+            </button>
+          )}
+        </div>
+      </header>
+
+      {/* 🔙 위 왼쪽 구석에 작은 뒤로가기 버튼 */}
+      <div style={{ marginBottom: 12 }}>
+        <Link
+          to="/"
+          className="btn btn-secondary btn-sm"
+          style={{ fontSize: 12 }}
+        >
+          ← 목록으로
+        </Link>
+      </div>
 
       {/* ⭐ 대표 이미지 (Unsplash) */}
       <div
         style={{
-          marginBottom: 16,
+          marginBottom: 20,
           borderRadius: 20,
           overflow: "hidden",
           boxShadow: "0 18px 40px rgba(15,23,42,0.12)",
           position: "relative",
-          background:
-            "linear-gradient(135deg,#eef2ff,#fce7f3,#e0f2fe)", 
+          background: "linear-gradient(135deg,#eef2ff,#fce7f3,#e0f2fe)",
           minHeight: 180,
         }}
       >
@@ -294,130 +382,187 @@ function CourseDetail() {
         )}
       </div>
 
-      <div
-        style={{
-          marginTop: 4,
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-        }}
-      >
-        <p style={{ color: "#666", margin: 0 }}>
-          {regionLabel && <>📍 {regionLabel}</>}{" "}
-          {hasSteps && <>· 총 {course.steps.length}단계 코스</>}
-        </p>
-
-        {token && (
-          <button
-            type="button"
-            className="btn btn-secondary btn-sm"
-            onClick={handleToggleLike}
-            disabled={likeLoading}
-            style={{
-              minWidth: 96,
-              backgroundColor: liked ? "#f97373" : "white",
-              color: liked ? "white" : "#111827",
-              borderColor: liked ? "#f97373" : "#e5e7eb",
-            }}
-          >
-            {liked ? "💜 찜해둔 코스" : "🤍 찜하기"}
-          </button>
-        )}
-      </div>
-
       {likeError && (
         <p style={{ marginTop: 4, fontSize: 12, color: "red" }}>{likeError}</p>
       )}
 
-      {/* steps */}
+      {/* 👣 타임라인 / 설명 */}
       {hasSteps ? (
         <>
-          <hr style={{ margin: "20px 0" }} />
-
-          <h2 className="section-title" style={{ marginBottom: 16 }}>
+          <h3 style={{ marginBottom: 12, fontSize: 16 }}>
             데이트 코스 타임라인
-          </h2>
+          </h3>
 
-          <div className="timeline">
-            <div className="timeline-line" />
+          <div
+            style={{
+              borderLeft: "2px solid #e5e7eb",
+              paddingLeft: 16,
+              marginLeft: 10,
+              display: "flex",
+              flexDirection: "column",
+              gap: 16,
+            }}
+          >
+            {course.steps.map((step, index) => {
+              const stepNo = index + 1;
+              const info = getStepInfo(step);
 
-            {course.steps.map((step, index) => (
-              <div key={index} className="timeline-item">
-                <div className="timeline-dot-wrapper">
-                  <div className="timeline-dot" />
-                  <span className="timeline-step-index">{index + 1}단계</span>
-                </div>
-
-                <div className="timeline-card">
-                  <h3 className="timeline-title">
-                    {step.place || "장소 미입력"}
-                  </h3>
-
-                  {step.address && (
-                    <p
+              return (
+                <div
+                  key={index}
+                  style={{
+                    display: "flex",
+                    gap: 12,
+                    alignItems: "flex-start",
+                  }}
+                >
+                  {/* 동그라미 + 단계 번호 */}
+                  <div
+                    style={{
+                      width: 40,
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "center",
+                      marginTop: 8,
+                    }}
+                  >
+                    <div
                       style={{
-                        marginTop: 4,
-                        marginBottom: 8,
-                        fontSize: 13,
+                        width: 24,
+                        height: 24,
+                        borderRadius: "999px",
+                        background:
+                          "radial-gradient(circle at 30% 30%, #a855f7, #4f46e5)",
+                        boxShadow:
+                          "0 10px 20px rgba(79,70,229,0.25), 0 0 0 6px rgba(129,140,248,0.15)",
+                      }}
+                    />
+                    <span
+                      style={{
+                        marginTop: 6,
+                        fontSize: 12,
                         color: "#6b7280",
                       }}
                     >
-                      📍 {step.address}
-                    </p>
-                  )}
-
-                  <div className="timeline-meta">
-                    {step.time && (
-                      <span className="timeline-tag">⏰ {step.time}</span>
-                    )}
-                    {step.budget !== undefined &&
-                      Number(step.budget) > 0 && (
-                        <span className="timeline-tag">
-                          💸 {step.budget}원
-                        </span>
-                      )}
+                      {stepNo}단계
+                    </span>
                   </div>
 
-                  {step.memo && (
-                    <p className="timeline-memo">{step.memo}</p>
-                  )}
-
-                  {step.kakaoUrl && (
-                    <a
-                      href={step.kakaoUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="btn btn-secondary btn-sm"
-                      style={{ marginTop: 8 }}
+                  {/* 내용 카드 */}
+                  <div
+                    style={{
+                      flex: 1,
+                      background:
+                        "radial-gradient(circle at top left,#ffffff,#f9fafb)",
+                      borderRadius: 18,
+                      padding: "14px 16px",
+                      boxShadow:
+                        "0 18px 40px rgba(15,23,42,0.08), 0 0 0 1px rgba(148,163,184,0.15)",
+                    }}
+                  >
+                    <p
+                      style={{
+                        marginBottom: 4,
+                        fontSize: 14,
+                        fontWeight: 600,
+                        color: "#111827",
+                      }}
                     >
-                      카카오맵에서 보기
-                    </a>
-                  )}
+                      {info.name}
+                    </p>
+
+                    {info.addr && (
+                      <p
+                        style={{
+                          marginBottom: 8,
+                          fontSize: 13,
+                          color: "#6b7280",
+                        }}
+                      >
+                        📍 {info.addr}
+                      </p>
+                    )}
+
+                    <div
+                      style={{
+                        display: "flex",
+                        flexWrap: "wrap",
+                        gap: 6,
+                        marginBottom: info.memo ? 8 : 0,
+                      }}
+                    >
+                      {info.time && (
+                        <span
+                          style={{
+                            fontSize: 12,
+                            padding: "4px 8px",
+                            borderRadius: 999,
+                            backgroundColor: "#eef2ff",
+                            color: "#4f46e5",
+                          }}
+                        >
+                          ⏰ {info.time}
+                        </span>
+                      )}
+                      {Number(info.budget) > 0 && (
+                        <span
+                          style={{
+                            fontSize: 12,
+                            padding: "4px 8px",
+                            borderRadius: 999,
+                            backgroundColor: "#ecfdf3",
+                            color: "#16a34a",
+                          }}
+                        >
+                          💸 {info.budget}원
+                        </span>
+                      )}
+                    </div>
+
+                    {info.memo && (
+                      <p
+                        style={{
+                          fontSize: 13,
+                          color: "#4b5563",
+                          whiteSpace: "pre-line",
+                        }}
+                      >
+                        {info.memo}
+                      </p>
+                    )}
+
+                    {info.url && (
+                      <a
+                        href={info.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="btn btn-secondary btn-sm"
+                        style={{ marginTop: 8 }}
+                      >
+                        카카오맵에서 보기
+                      </a>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </>
       ) : (
         <>
           {course.location && (
-            <p className="course-meta">📍 {course.location}</p>
+            <p style={{ marginTop: 12, color: "#6b7280", fontSize: 14 }}>
+              📍 {course.location}
+            </p>
           )}
           {course.description && (
-            <p style={{ marginTop: 16 }}>{course.description}</p>
+            <p style={{ marginTop: 16, fontSize: 14 }}>
+              {course.description}
+            </p>
           )}
         </>
       )}
-
-      {/* 🔥 오직 owner에게만 보이는 버튼들 */}
-      {isOwner && (
-        <div className="course-actions" style={{ marginTop: 24 }}>
-          <button className="btn btn-danger" onClick={handleDelete}>
-            삭제
-          </button>
-        </div>
-      )}
-    </div>
+    </section>
   );
 }
 

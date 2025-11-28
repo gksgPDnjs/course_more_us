@@ -14,6 +14,7 @@ import RandomPage from "./RandomPage.jsx";
 import { SEOUL_REGIONS } from "./data/regions";
 import "./App.css";
 import AutoCourseDetail from "./AutoCourseDetail";
+import HomePage from "./HomePage";
 const API_BASE_URL = "http://localhost:4000";
 
 function getRegionLabel(cityId) {
@@ -927,21 +928,22 @@ function App() {
       {/* 공통 레이아웃 */}
       <Route path="/" element={<Layout />}>
         {/* index: 코스 목록 */}
-        <Route index element={<CourseListPage />} />
+        <Route index element={<HomePage />} />
         {/* 코스 등록 */}
         <Route path="new" element={<NewCoursePage />} />
         {/* 마이페이지 */}
         <Route path="mypage" element={<MyPage />} />
         {/* 코스 상세 */}
         <Route path="courses/:id" element={<CourseDetail />} />
-        <Route path="/courses/:id" element={<CourseDetail />} />
         <Route path="/auto-courses/:autoId" element={<AutoCourseDetail />} />
+        <Route path="/" element={<HomePage />} />
+        <Route path="/recommend" element={<RecommendPage />} />
+        <Route path="random" element={<RandomPage />} />
       </Route>
 
       {/* 로그인은 레이아웃 없이 단독 페이지 */}
       <Route path="/login" element={<LoginPage />} />
-      <Route path="recommend" element={<RecommendPage />} />
-      <Route path="random" element={<RandomPage />} />
+      
 
     </Routes>
   );

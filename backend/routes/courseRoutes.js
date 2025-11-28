@@ -241,31 +241,48 @@ router.post("/:id/like", authMiddleware, async (req, res) => {
  */
 router.post("/:id/view", authMiddleware, async (req, res) => {
   try {
+    const userId = req.user.userId;
     const courseId = req.params.id;
-    const user = await User.findById(req.user.userId);
 
-    if (!user) {
-      return res.status(404).json({ message: "사용자를 찾을 수 없습니다." });
-    }
-
-    // 기존에 있으면 제거
-    user.recentCourses = (user.recentCourses || []).filter(
-      (cid) => String(cid) !== String(courseId)
+    // recentCourses에서 기존 항목 삭제 후 맨 앞 추가
+    // 최대 10개 유지
+    await User.updateOne(
+      { _id: userId },
+      {
+        $pull: { recentCourses: courseId }, // 기존 중복 제거
+      }
     );
 
-    // 맨 앞에 추가
-    user.recentCourses.unshift(courseId);
+    await User.updateOne(
+      { _id: userId },
+      {
+        $push: {
+          recentCourses: {
+            $each: [courseId],
+            $position: 0, // 맨 앞에 삽입
+          },
+        },
+      }
+    );
 
-    // 최대 10개만 유지
-    if (user.recentCourses.length > 10) {
-      user.recentCourses = user.recentCourses.slice(0, 10);
-    }
+    // 최대 10개 초과 시 뒤에서 제거
+    await User.updateOne(
+      { _id: userId },
+      [
+        {
+          $set: {
+            recentCourses: {
+              $slice: ["$recentCourses", 10],
+            },
+          },
+        },
+      ]
+    );
 
-    await user.save();
-    res.json({ ok: true });
+    return res.json({ ok: true });
   } catch (error) {
     console.error("record recent view error:", error);
-    res.status(500).json({ message: "최근 본 코스 기록 실패" });
+    return res.status(500).json({ message: "최근 본 코스 기록 실패" });
   }
 });
 

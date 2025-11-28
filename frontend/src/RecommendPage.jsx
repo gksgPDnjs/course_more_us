@@ -38,8 +38,12 @@ function RecommendPage() {
   const [loadingCourses, setLoadingCourses] = useState(false);
   const [coursesError, setCoursesError] = useState("");
 
-  // 카드 썸네일 이미지 (Unsplash)
+  // ⬇ 유저 코스 카드 썸네일 이미지 (Unsplash)
   const [cardImages, setCardImages] = useState({});
+
+  // ⬇ 자동 코스 카드 썸네일 이미지 (Unsplash)
+  const [autoCardImages, setAutoCardImages] = useState({});
+  const [autoCourses, setAutoCourses] = useState([]);
 
   useEffect(() => {
     const fetchCourses = async () => {
@@ -73,12 +77,11 @@ function RecommendPage() {
       ? courses
       : courses.filter((c) => c.city === selectedRegionId);
 
-  // 🔥 Recommend 리스트용 Unsplash 대표 이미지 로딩
+  // 🔥 1) 유저 코스 리스트용 Unsplash 대표 이미지 로딩
   useEffect(() => {
     if (!filteredCourses || filteredCourses.length === 0) return;
 
-    // 한번에 너무 많이 호출하지 말고, 앞에서 6개만 썸네일 불러오기
-    const targets = filteredCourses.slice(0, 6);
+    const targets = filteredCourses.slice(0, 6); // 앞 6개만
 
     const load = async () => {
       const updates = {};
@@ -94,7 +97,7 @@ function RecommendPage() {
             updates[course._id] = url;
           }
         } catch (e) {
-          console.warn("RecommendPage Unsplash 실패:", course.title, e);
+          console.warn("RecommendPage Unsplash 실패 (user):", course.title, e);
         }
       }
 
@@ -106,6 +109,47 @@ function RecommendPage() {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filteredCourses]); // cardImages는 일부러 deps에서 제외
+
+  // 🔥 2) 자동 코스 리스트용 Unsplash 대표 이미지 로딩
+  useEffect(() => {
+    if (!autoCourses || autoCourses.length === 0) return;
+
+    const targets = autoCourses.slice(0, 6); // 앞 6개만
+
+    const load = async () => {
+      const updates = {};
+
+      for (const course of targets) {
+        if (!course.id) continue;
+        // 이미 이미지가 있으면 다시 안 불러옴
+        if (autoCardImages[course.id]) continue;
+
+        try {
+          const keyword = buildUnsplashKeyword({
+            ...course,
+            city: course.regionId, // regionId를 city로 매핑
+          });
+          const url = await fetchUnsplashImage(keyword);
+          if (url) {
+            updates[course.id] = url;
+          }
+        } catch (e) {
+          console.warn(
+            "RecommendPage Unsplash 실패 (auto):",
+            course.title,
+            e
+          );
+        }
+      }
+
+      if (Object.keys(updates).length > 0) {
+        setAutoCardImages((prev) => ({ ...prev, ...updates }));
+      }
+    };
+
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoCourses]); // autoCardImages는 일부러 deps에서 제외
 
   // -------------------- 2. 카카오 장소 리스트 (핫플) --------------------
   const [kakaoPlaces, setKakaoPlaces] = useState([]);
@@ -258,7 +302,6 @@ function RecommendPage() {
   }
 
   // -------------------- 4. 자동 코스 여러 개 쌓기 --------------------
-  const [autoCourses, setAutoCourses] = useState([]);
 
   const fetchAutoCourse = async (regionId) => {
     try {
@@ -493,6 +536,7 @@ function RecommendPage() {
                   key={course.id || index}
                   course={course}
                   index={index}
+                  imageUrl={autoCardImages[course.id] || null}
                 />
               ))}
             </ul>
@@ -613,7 +657,7 @@ function TabButton({ label, active, onClick }) {
 }
 
 // ✅ 자동 생성 코스용 카드 컴포넌트
-function AutoCourseCard({ course, index }) {
+function AutoCourseCard({ course, index, imageUrl }) {
   const firstStep = course.steps?.[0];
   const placeObj = firstStep?.place || firstStep || {};
   const firstName =
@@ -633,13 +677,30 @@ function AutoCourseCard({ course, index }) {
         style={{ textDecoration: "none", color: "inherit" }}
       >
         <article className="course-card-outer">
+          {/* 이미지 영역 */}
           <div className="course-card-image-wrap">
             <div className="course-card-image-inner">
-              <div className="course-card-image-placeholder" />
+              {imageUrl ? (
+                <img
+                  src={imageUrl}
+                  alt={course.title}
+                  className="course-card-image"
+                  onError={(e) => {
+                    e.target.style.display = "none";
+                  }}
+                />
+              ) : null}
+
+              {/* 이미지가 없어도 보이는 그라디언트 배경 */}
+              {!imageUrl && (
+                <div className="course-card-image-placeholder" />
+              )}
+
               <span className="course-card-mood-badge">자동 생성</span>
             </div>
           </div>
 
+          {/* 내용 영역 */}
           <div className="course-card-body">
             <p className="course-card-meta-small">
               자동 추천 코스 #{index + 1}
