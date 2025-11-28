@@ -3,23 +3,19 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { SEOUL_REGIONS } from "./data/regions";
 import CourseCard from "./CourseCard";
+import { buildUnsplashKeyword } from "./api/unsplashKeyword";
+import { fetchUnsplashImage } from "./api/unsplash";
 
 const API_BASE_URL = "http://localhost:4000";
-//const KAKAO_REST_KEY = import.meta.env.VITE_KAKAO_REST_KEY;
 
 // 지역 객체에서 "대표 이름" 하나 뽑기 (핫플 검색용)
 function getRegionMainName(region) {
-  // 1순위: regions.js에 있는 keywords 중 첫 번째 값 사용
   if (Array.isArray(region.keywords) && region.keywords.length > 0) {
     return region.keywords[0]; // 예: "홍대", "강남역"
   }
-
-  // 2순위: label 을 / 기준으로 잘라서 첫 조각 사용
   if (region.label) {
     return region.label.split("/")[0].trim(); // 예: "홍대/신촌/마포/연남" -> "홍대"
   }
-
-  // 그래도 없으면 id라도 쓰기
   return region.id || "";
 }
 
@@ -31,7 +27,6 @@ function getRegionLabel(cityId) {
 }
 
 function RecommendPage() {
-
   // ✅ 지역 선택 (id 기준: "all", "gangnam" ...)
   const [selectedRegionId, setSelectedRegionId] = useState("all");
 
@@ -42,6 +37,9 @@ function RecommendPage() {
   const [courses, setCourses] = useState([]);
   const [loadingCourses, setLoadingCourses] = useState(false);
   const [coursesError, setCoursesError] = useState("");
+
+  // 카드 썸네일 이미지 (Unsplash)
+  const [cardImages, setCardImages] = useState({});
 
   useEffect(() => {
     const fetchCourses = async () => {
@@ -75,166 +73,190 @@ function RecommendPage() {
       ? courses
       : courses.filter((c) => c.city === selectedRegionId);
 
+  // 🔥 Recommend 리스트용 Unsplash 대표 이미지 로딩
+  useEffect(() => {
+    if (!filteredCourses || filteredCourses.length === 0) return;
+
+    // 한번에 너무 많이 호출하지 말고, 앞에서 6개만 썸네일 불러오기
+    const targets = filteredCourses.slice(0, 6);
+
+    const load = async () => {
+      const updates = {};
+
+      for (const course of targets) {
+        // 이미 이미지가 있으면 다시 안 불러옴
+        if (cardImages[course._id]) continue;
+
+        try {
+          const keyword = buildUnsplashKeyword(course);
+          const url = await fetchUnsplashImage(keyword);
+          if (url) {
+            updates[course._id] = url;
+          }
+        } catch (e) {
+          console.warn("RecommendPage Unsplash 실패:", course.title, e);
+        }
+      }
+
+      if (Object.keys(updates).length > 0) {
+        setCardImages((prev) => ({ ...prev, ...updates }));
+      }
+    };
+
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filteredCourses]); // cardImages는 일부러 deps에서 제외
+
   // -------------------- 2. 카카오 장소 리스트 (핫플) --------------------
-  // -------------------- 2. 카카오 장소 리스트 (핫플) --------------------
-const [kakaoPlaces, setKakaoPlaces] = useState([]);
-const [kakaoLoading, setKakaoLoading] = useState(false);
-const [kakaoError, setKakaoError] = useState("");
+  const [kakaoPlaces, setKakaoPlaces] = useState([]);
+  const [kakaoLoading, setKakaoLoading] = useState(false);
+  const [kakaoError, setKakaoError] = useState("");
 
-// 🔁 카카오 프록시 호출 공통 함수
-async function callKakaoSearch({ keyword, x, y, radius = 5000, size = 15 }) {
-  const params = new URLSearchParams({
-    query: keyword,
-    size: String(size),
-  });
+  // 🔁 카카오 프록시 호출 공통 함수
+  async function callKakaoSearch({ keyword, x, y, radius = 5000, size = 15 }) {
+    const params = new URLSearchParams({
+      query: keyword,
+      size: String(size),
+    });
 
-  if (x && y) {
-    params.append("x", String(x));
-    params.append("y", String(y));
-    params.append("radius", String(radius));
-  }
+    if (x && y) {
+      params.append("x", String(x));
+      params.append("y", String(y));
+      params.append("radius", String(radius));
+    }
 
-  const res = await fetch(
-    `${API_BASE_URL}/api/kakao/search?${params.toString()}`
-  );
-
-  const data = await res.json().catch(() => ({}));
-
-  if (!res.ok) {
-    console.error("카카오 프록시 실패:", data);
-    throw new Error(data.message || "카카오 프록시 오류");
-  }
-
-  return data.documents || [];
-}
-
-const fetchKakaoPlaces = async (regionId) => {
-  const region = SEOUL_REGIONS.find((r) => r.id === regionId);
-  if (!region) {
-    alert("선택한 지역 정보를 찾을 수 없어요.");
-    return;
-  }
-
-  const baseName = getRegionMainName(region); // 예: "홍대"
-  const { x, y } = region.center || {};
-  const blacklistRegex = /(스터디|독서실|학원|공부|독학|고시원)/i;
-
-  // 공통 키워드 3개: 맛집 / 카페 / 데이트 스팟
-  const keywords = [
-    `${baseName} 맛집`,
-    `${baseName} 카페`,
-    `${baseName} 데이트 스팟`,
-  ];
-
-  try {
-    setKakaoLoading(true);
-    setKakaoError("");
-    setKakaoPlaces([]);
-
-    // 키워드별로 프록시 호출
-    const results = await Promise.all(
-      keywords.map((keyword) =>
-        callKakaoSearch({ keyword, x, y, radius: 5000, size: 10 }).catch(
-          () => []
-        )
-      )
+    const res = await fetch(
+      `${API_BASE_URL}/api/kakao/search?${params.toString()}`
     );
 
-    const merged = results.flat();
+    const data = await res.json().catch(() => ({}));
 
-    if (merged.length === 0) {
-      setKakaoPlaces([]);
-      alert("이 지역에서 보여줄만한 장소를 찾지 못했어요 ㅠㅠ");
+    if (!res.ok) {
+      console.error("카카오 프록시 실패:", data);
+      throw new Error(data.message || "카카오 프록시 오류");
+    }
+
+    return data.documents || [];
+  }
+
+  const fetchKakaoPlaces = async (regionId) => {
+    const region = SEOUL_REGIONS.find((r) => r.id === regionId);
+    if (!region) {
+      alert("선택한 지역 정보를 찾을 수 없어요.");
       return;
     }
 
-    // id 기준으로 중복 제거 + 블랙리스트 필터
-    const seen = new Set();
-    const unique = [];
-    for (const place of merged) {
-      if (!place.id) continue;
-      if (seen.has(place.id)) continue;
-      if (blacklistRegex.test(place.place_name || "")) continue;
-      seen.add(place.id);
-      unique.push(place);
-    }
+    const baseName = getRegionMainName(region); // 예: "홍대"
+    const { x, y } = region.center || {};
+    const blacklistRegex = /(스터디|독서실|학원|공부|독학|고시원)/i;
 
-    const finalList = unique.slice(0, 20);
-    setKakaoPlaces(finalList);
-  } catch (err) {
-    console.error(err);
-    setKakaoError(err.message || "카카오 장소를 불러오는 데 실패했어요.");
-  } finally {
-    setKakaoLoading(false);
-  }
-};
+    const keywords = [
+      `${baseName} 맛집`,
+      `${baseName} 카페`,
+      `${baseName} 데이트 스팟`,
+    ];
 
-  // -------------------- 3. 좌표 기반 키워드 검색 (자동 코스용) --------------------
-// -------------------- 3. 좌표 기반 키워드 검색 (자동 코스용) --------------------
-async function searchByCategory(region, keyword) {
-  const { x, y } = region.center || {};
-  const blacklistRegex = /(스터디|독서실|학원|공부|독학|고시원)/i;
+    try {
+      setKakaoLoading(true);
+      setKakaoError("");
+      setKakaoPlaces([]);
 
-  // 1차: 중심 좌표 기준 검색
-  const fetchOnce = async (useCenter) => {
-    let params = {
-      keyword,
-      size: 15,
-    };
-
-    if (useCenter && x && y) {
-      params.x = x;
-      params.y = y;
-      params.radius = 5000;
-    }
-
-    const docs = await callKakaoSearch({
-      keyword: params.keyword,
-      x: params.x,
-      y: params.y,
-      radius: params.radius,
-      size: params.size,
-    }).catch(() => []);
-
-    if (!docs || docs.length === 0) return [];
-
-    let filtered = docs.filter(
-      (p) => !blacklistRegex.test(p.place_name || "")
-    );
-
-    // 카페/맛집 추가 필터
-    if (keyword.includes("카페")) {
-      const cafeRegex = /(카페|coffee|커피|브런치|디저트)/i;
-      const onlyCafe = filtered.filter((p) =>
-        cafeRegex.test(p.place_name || "")
+      const results = await Promise.all(
+        keywords.map((keyword) =>
+          callKakaoSearch({ keyword, x, y, radius: 5000, size: 10 }).catch(
+            () => []
+          )
+        )
       );
-      if (onlyCafe.length > 0) filtered = onlyCafe;
-    } else if (keyword.includes("맛집")) {
-      const notCafeRegex = /(카페|coffee|커피|디저트|베이커리)/i;
-      const onlyFood = filtered.filter(
-        (p) => !notCafeRegex.test(p.place_name || "")
-      );
-      if (onlyFood.length > 0) filtered = onlyFood;
-    }
 
-    if (filtered.length === 0) return docs;
-    return filtered;
+      const merged = results.flat();
+
+      if (merged.length === 0) {
+        setKakaoPlaces([]);
+        alert("이 지역에서 보여줄만한 장소를 찾지 못했어요 ㅠㅠ");
+        return;
+      }
+
+      const seen = new Set();
+      const unique = [];
+      for (const place of merged) {
+        if (!place.id) continue;
+        if (seen.has(place.id)) continue;
+        if (blacklistRegex.test(place.place_name || "")) continue;
+        seen.add(place.id);
+        unique.push(place);
+      }
+
+      setKakaoPlaces(unique.slice(0, 20));
+    } catch (err) {
+      console.error(err);
+      setKakaoError(err.message || "카카오 장소를 불러오는 데 실패했어요.");
+    } finally {
+      setKakaoLoading(false);
+    }
   };
 
-  // 1차: center 사용
-  let candidates = await fetchOnce(true);
+  // -------------------- 3. 좌표 기반 키워드 검색 (자동 코스용) --------------------
+  async function searchByCategory(region, keyword) {
+    const { x, y } = region.center || {};
+    const blacklistRegex = /(스터디|독서실|학원|공부|독학|고시원)/i;
 
-  // 2차: 결과가 없으면 center 없이
-  if (!candidates || candidates.length === 0) {
-    candidates = await fetchOnce(false);
+    const fetchOnce = async (useCenter) => {
+      let params = {
+        keyword,
+        size: 15,
+      };
+
+      if (useCenter && x && y) {
+        params.x = x;
+        params.y = y;
+        params.radius = 5000;
+      }
+
+      const docs = await callKakaoSearch({
+        keyword: params.keyword,
+        x: params.x,
+        y: params.y,
+        radius: params.radius,
+        size: params.size,
+      }).catch(() => []);
+
+      if (!docs || docs.length === 0) return [];
+
+      let filtered = docs.filter(
+        (p) => !blacklistRegex.test(p.place_name || "")
+      );
+
+      if (keyword.includes("카페")) {
+        const cafeRegex = /(카페|coffee|커피|브런치|디저트)/i;
+        const onlyCafe = filtered.filter((p) =>
+          cafeRegex.test(p.place_name || "")
+        );
+        if (onlyCafe.length > 0) filtered = onlyCafe;
+      } else if (keyword.includes("맛집")) {
+        const notCafeRegex = /(카페|coffee|커피|디저트|베이커리)/i;
+        const onlyFood = filtered.filter(
+          (p) => !notCafeRegex.test(p.place_name || "")
+        );
+        if (onlyFood.length > 0) filtered = onlyFood;
+      }
+
+      if (filtered.length === 0) return docs;
+      return filtered;
+    };
+
+    let candidates = await fetchOnce(true);
+
+    if (!candidates || candidates.length === 0) {
+      candidates = await fetchOnce(false);
+    }
+
+    if (!candidates || candidates.length === 0) return null;
+
+    const limit = Math.min(candidates.length, 5);
+    return candidates[Math.floor(Math.random() * limit)];
   }
 
-  if (!candidates || candidates.length === 0) return null;
-
-  const limit = Math.min(candidates.length, 5);
-  const picked = candidates[Math.floor(Math.random() * limit)];
-  return picked;
-}
   // -------------------- 4. 자동 코스 여러 개 쌓기 --------------------
   const [autoCourses, setAutoCourses] = useState([]);
 
@@ -248,13 +270,8 @@ async function searchByCategory(region, keyword) {
 
       const baseName = getRegionMainName(region);
 
-      // 1단계: 카페 (없어도 전체 코스를 포기하지 않음)
       const cafe = await searchByCategory(region, `${baseName} 카페`);
-
-      // 2단계: 음식점
       const food = await searchByCategory(region, `${baseName} 맛집`);
-
-      // 3단계: 볼거리(관광/명소)
       const spot = await searchByCategory(region, `${baseName} 데이트 코스`);
 
       const steps = [
@@ -279,8 +296,6 @@ async function searchByCategory(region, keyword) {
       };
 
       console.log("✨ 자동 코스 생성 결과:", course);
-
-      // 새로 만든 코스를 앞에 추가 (위에 쌓이게)
       setAutoCourses((prev) => [course, ...prev]);
     } catch (err) {
       console.error("자동 코스 생성 에러:", err);
@@ -311,7 +326,6 @@ async function searchByCategory(region, keyword) {
         className="card"
         style={{ display: "flex", flexDirection: "column", gap: 12 }}
       >
-        {/* 지역 버튼 */}
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
           <button
             type="button"
@@ -327,7 +341,6 @@ async function searchByCategory(region, keyword) {
             서울 전체
           </button>
 
-          {/* all 제외한 지역들 */}
           {SEOUL_REGIONS.filter((r) => r.id !== "all").map((region) => (
             <button
               key={region.id}
@@ -353,8 +366,8 @@ async function searchByCategory(region, keyword) {
             color: "#6b7280",
           }}
         >
-          * 서울 전체를 선택하면 모든 지역의 코스를 함께 보여줘요. 특정 지역을
-          선택하면 그 지역에 맞는 추천만 볼 수 있어요.
+          * 서울 전체를 선택하면 모든 지역의 코스를 함께 보여줘요. 특정
+          지역을 선택하면 그 지역에 맞는 추천만 볼 수 있어요.
         </p>
       </section>
 
@@ -385,8 +398,6 @@ async function searchByCategory(region, keyword) {
           onClick={() => setActiveTab("kakao")}
         />
       </div>
-
-      {/* ✅ 탭별 콘텐츠 */}
 
       {/* --- 5-1. 내 서비스에 등록된 코스 탭 --- */}
       {activeTab === "user" && (
@@ -425,7 +436,7 @@ async function searchByCategory(region, keyword) {
                   <CourseCard
                     key={course._id}
                     to={`/courses/${course._id}`}
-                    imageUrl={null} // 🔜 나중에 Unsplash 대표 이미지 연결 예정
+                    imageUrl={cardImages[course._id] || null}
                     mood={course.mood}
                     title={course.title}
                     regionLabel={regionLabel}
@@ -476,14 +487,13 @@ async function searchByCategory(region, keyword) {
               만들어보세요.
             </p>
           ) : (
-             <ul className="course-list" style={{ marginTop: 16 }}>
-        {autoCourses.map((course, index) => (
-          <AutoCourseCard
-            key={course.id || index}
-            course={course}
-            index={index}
-          />
-            
+            <ul className="course-list" style={{ marginTop: 16 }}>
+              {autoCourses.map((course, index) => (
+                <AutoCourseCard
+                  key={course.id || index}
+                  course={course}
+                  index={index}
+                />
               ))}
             </ul>
           )}
@@ -601,6 +611,7 @@ function TabButton({ label, active, onClick }) {
     </button>
   );
 }
+
 // ✅ 자동 생성 코스용 카드 컴포넌트
 function AutoCourseCard({ course, index }) {
   const firstStep = course.steps?.[0];
@@ -622,16 +633,13 @@ function AutoCourseCard({ course, index }) {
         style={{ textDecoration: "none", color: "inherit" }}
       >
         <article className="course-card-outer">
-          {/* 상단 이미지 영역 – 지금은 그라디언트 + 배지 */}
           <div className="course-card-image-wrap">
             <div className="course-card-image-inner">
-              {/* 이미지 없으니 placeholder만 */}
               <div className="course-card-image-placeholder" />
               <span className="course-card-mood-badge">자동 생성</span>
             </div>
           </div>
 
-          {/* 내용 영역 */}
           <div className="course-card-body">
             <p className="course-card-meta-small">
               자동 추천 코스 #{index + 1}
@@ -647,7 +655,6 @@ function AutoCourseCard({ course, index }) {
               <span className="course-card-footer-meta">
                 {stepsCount}단계 코스
               </span>
-              {/* 필요하면 여기에 “상세 보기 ▶” 같은 텍스트도 넣을 수 있음 */}
             </div>
           </div>
         </article>
