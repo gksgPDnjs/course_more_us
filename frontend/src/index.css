@@ -963,3 +963,160 @@ body {
   background: #4f46e5 !important;
   color: white !important;
 }
+/* ===== 공통 코스 카드 기본 레이아웃 ===== */
+
+.course-card-wrapper {
+  list-style: none;
+}
+
+.course-card-outer {
+  background: #ffffff;
+  border-radius: 24px;
+  overflow: hidden;
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
+  display: flex;
+  flex-direction: column;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.course-card-outer:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.14);
+}
+
+/* 이미지 영역 */
+
+.course-card-image-wrap {
+  position: relative;
+  width: 100%;
+  padding: 0;
+}
+
+.course-card-image-inner {
+  position: relative;
+  width: 100%;
+  padding-top: 62%; /* 가로:세로 비율 */
+  overflow: hidden;
+}
+
+.course-card-image,
+.course-card-image-placeholder {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 24px 24px 0 0;
+}
+
+.course-card-image-placeholder {
+  background: radial-gradient(circle at top left, #fde68a, #f9a8d4, #a5b4fc);
+}
+
+/* 분위기 뱃지 */
+
+.course-card-mood-badge {
+  position: absolute;
+  left: 12px;
+  top: 12px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #ffffff;
+  background: #10b981; /* 연한 그린 */
+}
+
+/* 찜 버튼 자리 */
+
+.course-card-like-badge {
+  position: absolute;
+  right: 12px;
+  top: 12px;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  border: none;
+  background: rgba(255, 255, 255, 0.9);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  cursor: pointer;
+  color: #f97373;
+  box-shadow: 0 6px 12px rgba(15, 23, 42, 0.15);
+}
+
+/* 내용 영역 */
+
+.course-card-body {
+  padding: 14px 16px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.course-card-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: #111827;
+  margin: 0;
+}
+
+.course-card-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  font-size: 12px;
+}
+
+.course-card-meta {
+  color: #6b7280;
+}
+
+.course-card-firststep {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: #4b5563;
+}
+
+/* 하단 메타 */
+
+.course-card-footer {
+  margin-top: 6px;
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: #9ca3af;
+}
+
+.course-card-footer-meta {
+  white-space: nowrap;
+}
+
+/* 링크 기본 스타일 제거 */
+.course-card-link {
+  display: block;
+}
+/* 코스 리스트 그리드 레이아웃 */
+.course-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 20px;
+  padding: 0;
+  margin: 0;
+}
+/* 전체 페이지 최대 폭 제한 */
+.page {
+  max-width: 1100px;   /* 원하는 너비: 900~1200 중 아무거나 */
+  margin: 0 auto;      /* 가운데 정렬 */
+  padding: 0 20px;     /* 좌우 여백 */
+}
+/* --- 기존 CourseCard 스타일들 --- */
+
+/* 여기에 새로 추가 */
+.course-card-meta-small {
+  font-size: 12px;
+  color: #9ca3af;
+  margin-bottom: 4px;
+}

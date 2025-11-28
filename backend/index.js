@@ -8,7 +8,7 @@ import courseRoutes from "./routes/courseRoutes.js";
 import authRoutes from "./routes/authRoutes.js";
 import recommendRoutes from "./routes/recommendRoutes.js";
 import randomRoutes from "./routes/randomRoutes.js";
-
+import kakaoRoutes from "./routes/kakaoRoutes.js";
 
 dotenv.config();
 const MONGODB_URI = process.env.MONGODB_URI;
@@ -30,6 +30,7 @@ app.use("/api/courses", courseRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/recommend", recommendRoutes);
 app.use("/api/random", randomRoutes);
+app.use("/api/kakao", kakaoRoutes);
 
 // 테스트용 기본 라우트
 app.get("/", (req, res) => {

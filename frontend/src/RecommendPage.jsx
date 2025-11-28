@@ -2,9 +2,10 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { SEOUL_REGIONS } from "./data/regions";
+import CourseCard from "./CourseCard";
 
 const API_BASE_URL = "http://localhost:4000";
-const KAKAO_REST_KEY = import.meta.env.VITE_KAKAO_REST_KEY;
+//const KAKAO_REST_KEY = import.meta.env.VITE_KAKAO_REST_KEY;
 
 // 지역 객체에서 "대표 이름" 하나 뽑기 (핫플 검색용)
 function getRegionMainName(region) {
@@ -30,24 +31,18 @@ function getRegionLabel(cityId) {
 }
 
 function RecommendPage() {
-  console.log("Kakao key:", KAKAO_REST_KEY);
 
-  const [selectedRegion, setSelectedRegion] = useState("all");
+  // ✅ 지역 선택 (id 기준: "all", "gangnam" ...)
+  const [selectedRegionId, setSelectedRegionId] = useState("all");
 
-  // 내 코스(백엔드)
+  // ✅ 탭: user / auto / kakao
+  const [activeTab, setActiveTab] = useState("user");
+
+  // -------------------- 1. 내 코스(백엔드) --------------------
   const [courses, setCourses] = useState([]);
   const [loadingCourses, setLoadingCourses] = useState(false);
   const [coursesError, setCoursesError] = useState("");
 
-  // 카카오 장소 리스트 (그냥 장소 목록)
-  const [kakaoPlaces, setKakaoPlaces] = useState([]);
-  const [kakaoLoading, setKakaoLoading] = useState(false);
-  const [kakaoError, setKakaoError] = useState("");
-
-  // ⭐ 자동 코스 여러 개를 쌓아둘 배열
-  const [autoCourses, setAutoCourses] = useState([]);
-
-  // -------------------- 1. 내 코스 불러오기 --------------------
   useEffect(() => {
     const fetchCourses = async () => {
       try {
@@ -76,189 +71,173 @@ function RecommendPage() {
   }, []);
 
   const filteredCourses =
-    selectedRegion === "all"
+    selectedRegionId === "all"
       ? courses
-      : courses.filter((c) => c.city === selectedRegion);
+      : courses.filter((c) => c.city === selectedRegionId);
 
-  // -------------------- 2. 카카오 장소 검색 (지역 핫플 리스트 용) --------------------
-  const fetchKakaoPlaces = async (regionId) => {
-    if (!KAKAO_REST_KEY) {
-      alert("VITE_KAKAO_REST_KEY가 설정되어 있지 않아요 (.env 확인)");
-      return;
-    }
+  // -------------------- 2. 카카오 장소 리스트 (핫플) --------------------
+  // -------------------- 2. 카카오 장소 리스트 (핫플) --------------------
+const [kakaoPlaces, setKakaoPlaces] = useState([]);
+const [kakaoLoading, setKakaoLoading] = useState(false);
+const [kakaoError, setKakaoError] = useState("");
 
-    const region = SEOUL_REGIONS.find((r) => r.id === regionId);
-    if (!region) {
-      alert("선택한 지역 정보를 찾을 수 없어요.");
-      return;
-    }
+// 🔁 카카오 프록시 호출 공통 함수
+async function callKakaoSearch({ keyword, x, y, radius = 5000, size = 15 }) {
+  const params = new URLSearchParams({
+    query: keyword,
+    size: String(size),
+  });
 
-    const baseName = getRegionMainName(region); // 예: "홍대"
-    const { x, y } = region.center || {};
-
-    if (!x || !y) {
-      alert("이 지역의 중심 좌표(center)가 설정되어 있지 않아요.");
-      return;
-    }
-
-    // 공통 키워드 3개: 맛집 / 카페 / 데이트 스팟
-    const keywords = [
-      `${baseName} 맛집`,
-      `${baseName} 카페`,
-      `${baseName} 데이트 스팟`,
-    ];
-
-    const blacklistRegex = /(스터디|독서실|학원|공부|독학|고시원)/i;
-
-    // 키워드 하나씩 카카오 API 호출하는 헬퍼
-    const callKakao = async (keyword) => {
-      const url =
-        "https://dapi.kakao.com/v2/local/search/keyword.json" +
-        `?query=${encodeURIComponent(keyword)}` +
-        `&x=${x}&y=${y}` +
-        `&radius=5000` + // 반경 5km
-        `&size=10`;
-
-      const res = await fetch(url, {
-        headers: { Authorization: `KakaoAK ${KAKAO_REST_KEY}` },
-      });
-
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        console.error("카카오 장소 검색 실패:", keyword, data);
-        return [];
-      }
-
-      let docs = data.documents || [];
-      // 스터디카페/학원 같은 거 제거
-      docs = docs.filter((p) => !blacklistRegex.test(p.place_name || ""));
-      console.log("📍 카카오 핫플 검색 결과:", keyword, docs);
-      return docs;
-    };
-
-    try {
-      setKakaoLoading(true);
-      setKakaoError("");
-      setKakaoPlaces([]);
-
-      // 3개의 키워드를 병렬로 검색
-      const results = await Promise.all(keywords.map(callKakao));
-      const merged = results.flat();
-
-      if (merged.length === 0) {
-        setKakaoPlaces([]);
-        alert("이 지역에서 보여줄만한 장소를 찾지 못했어요 ㅠㅠ");
-        return;
-      }
-
-      // id 기준으로 중복 제거
-      const seen = new Set();
-      const unique = [];
-      for (const place of merged) {
-        if (!place.id) continue;
-        if (seen.has(place.id)) continue;
-        seen.add(place.id);
-        unique.push(place);
-      }
-
-      // 너무 많으면 상위 20개만
-      const finalList = unique.slice(0, 20);
-
-      setKakaoPlaces(finalList);
-    } catch (err) {
-      console.error(err);
-      setKakaoError(err.message || "카카오 장소를 불러오는 데 실패했어요.");
-    } finally {
-      setKakaoLoading(false);
-    }
-  };
-
-  // -------------------- 3. 좌표 기반 키워드 검색 (자동 코스용) --------------------
-  async function searchByCategory(region, keyword) {
-    if (!KAKAO_REST_KEY) {
-      throw new Error("KAKAO REST KEY 누락");
-    }
-
-    const { x, y } = region.center || {};
-
-    const blacklistRegex = /(스터디|독서실|학원|공부|독학|고시원)/i;
-
-    const fetchOnce = async (useCenter) => {
-      let url =
-        "https://dapi.kakao.com/v2/local/search/keyword.json" +
-        `?query=${encodeURIComponent(keyword)}` +
-        `&size=15`;
-
-      // 첫 번째 시도에서는 중심 좌표를 사용하고,
-      // 두 번째 시도에서는 텍스트 검색만 사용
-      if (useCenter && x && y) {
-        url += `&x=${x}&y=${y}&radius=5000`;
-      }
-
-      const res = await fetch(url, {
-        headers: { Authorization: `KakaoAK ${KAKAO_REST_KEY}` },
-      });
-
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(data?.message || "카카오 키워드 검색 실패");
-      }
-
-      let docs = data.documents || [];
-      console.log(
-        "🔎 자동 코스용 검색 결과:",
-        keyword,
-        useCenter ? "(center 사용)" : "(center 없이)",
-        docs
-      );
-
-      if (docs.length === 0) return [];
-
-      // 1) 공통 블랙리스트(스터디카페, 학원 등 제거)
-      let filtered = docs.filter(
-        (p) => !blacklistRegex.test(p.place_name || "")
-      );
-
-      // 2) 키워드별 추가 필터
-      if (keyword.includes("카페")) {
-        const cafeRegex = /(카페|coffee|커피|브런치|디저트)/i;
-        const onlyCafe = filtered.filter((p) =>
-          cafeRegex.test(p.place_name || "")
-        );
-        if (onlyCafe.length > 0) filtered = onlyCafe;
-      } else if (keyword.includes("맛집")) {
-        const notCafeRegex = /(카페|coffee|커피|디저트|베이커리)/i;
-        const onlyFood = filtered.filter(
-          (p) => !notCafeRegex.test(p.place_name || "")
-        );
-        if (onlyFood.length > 0) filtered = onlyFood;
-      }
-      // spot(데이트 코스)는 공통 블랙리스트만 적용
-
-      if (filtered.length === 0) {
-        filtered = docs;
-      }
-
-      return filtered;
-    };
-
-    // 1차: 중심 좌표 기준 검색
-    let candidates = await fetchOnce(true);
-
-    // 2차: 결과가 없다면, 중심 좌표 없이 텍스트 검색만
-    if (!candidates || candidates.length === 0) {
-      candidates = await fetchOnce(false);
-    }
-
-    if (!candidates || candidates.length === 0) return null;
-
-    // 상위 5개 안에서 랜덤 1개 선택
-    const limit = Math.min(candidates.length, 5);
-    const picked = candidates[Math.floor(Math.random() * limit)];
-    return picked;
+  if (x && y) {
+    params.append("x", String(x));
+    params.append("y", String(y));
+    params.append("radius", String(radius));
   }
 
-  // ⭐ 자동 코스 만들기 (여러 개 쌓기)
+  const res = await fetch(
+    `${API_BASE_URL}/api/kakao/search?${params.toString()}`
+  );
+
+  const data = await res.json().catch(() => ({}));
+
+  if (!res.ok) {
+    console.error("카카오 프록시 실패:", data);
+    throw new Error(data.message || "카카오 프록시 오류");
+  }
+
+  return data.documents || [];
+}
+
+const fetchKakaoPlaces = async (regionId) => {
+  const region = SEOUL_REGIONS.find((r) => r.id === regionId);
+  if (!region) {
+    alert("선택한 지역 정보를 찾을 수 없어요.");
+    return;
+  }
+
+  const baseName = getRegionMainName(region); // 예: "홍대"
+  const { x, y } = region.center || {};
+  const blacklistRegex = /(스터디|독서실|학원|공부|독학|고시원)/i;
+
+  // 공통 키워드 3개: 맛집 / 카페 / 데이트 스팟
+  const keywords = [
+    `${baseName} 맛집`,
+    `${baseName} 카페`,
+    `${baseName} 데이트 스팟`,
+  ];
+
+  try {
+    setKakaoLoading(true);
+    setKakaoError("");
+    setKakaoPlaces([]);
+
+    // 키워드별로 프록시 호출
+    const results = await Promise.all(
+      keywords.map((keyword) =>
+        callKakaoSearch({ keyword, x, y, radius: 5000, size: 10 }).catch(
+          () => []
+        )
+      )
+    );
+
+    const merged = results.flat();
+
+    if (merged.length === 0) {
+      setKakaoPlaces([]);
+      alert("이 지역에서 보여줄만한 장소를 찾지 못했어요 ㅠㅠ");
+      return;
+    }
+
+    // id 기준으로 중복 제거 + 블랙리스트 필터
+    const seen = new Set();
+    const unique = [];
+    for (const place of merged) {
+      if (!place.id) continue;
+      if (seen.has(place.id)) continue;
+      if (blacklistRegex.test(place.place_name || "")) continue;
+      seen.add(place.id);
+      unique.push(place);
+    }
+
+    const finalList = unique.slice(0, 20);
+    setKakaoPlaces(finalList);
+  } catch (err) {
+    console.error(err);
+    setKakaoError(err.message || "카카오 장소를 불러오는 데 실패했어요.");
+  } finally {
+    setKakaoLoading(false);
+  }
+};
+
+  // -------------------- 3. 좌표 기반 키워드 검색 (자동 코스용) --------------------
+// -------------------- 3. 좌표 기반 키워드 검색 (자동 코스용) --------------------
+async function searchByCategory(region, keyword) {
+  const { x, y } = region.center || {};
+  const blacklistRegex = /(스터디|독서실|학원|공부|독학|고시원)/i;
+
+  // 1차: 중심 좌표 기준 검색
+  const fetchOnce = async (useCenter) => {
+    let params = {
+      keyword,
+      size: 15,
+    };
+
+    if (useCenter && x && y) {
+      params.x = x;
+      params.y = y;
+      params.radius = 5000;
+    }
+
+    const docs = await callKakaoSearch({
+      keyword: params.keyword,
+      x: params.x,
+      y: params.y,
+      radius: params.radius,
+      size: params.size,
+    }).catch(() => []);
+
+    if (!docs || docs.length === 0) return [];
+
+    let filtered = docs.filter(
+      (p) => !blacklistRegex.test(p.place_name || "")
+    );
+
+    // 카페/맛집 추가 필터
+    if (keyword.includes("카페")) {
+      const cafeRegex = /(카페|coffee|커피|브런치|디저트)/i;
+      const onlyCafe = filtered.filter((p) =>
+        cafeRegex.test(p.place_name || "")
+      );
+      if (onlyCafe.length > 0) filtered = onlyCafe;
+    } else if (keyword.includes("맛집")) {
+      const notCafeRegex = /(카페|coffee|커피|디저트|베이커리)/i;
+      const onlyFood = filtered.filter(
+        (p) => !notCafeRegex.test(p.place_name || "")
+      );
+      if (onlyFood.length > 0) filtered = onlyFood;
+    }
+
+    if (filtered.length === 0) return docs;
+    return filtered;
+  };
+
+  // 1차: center 사용
+  let candidates = await fetchOnce(true);
+
+  // 2차: 결과가 없으면 center 없이
+  if (!candidates || candidates.length === 0) {
+    candidates = await fetchOnce(false);
+  }
+
+  if (!candidates || candidates.length === 0) return null;
+
+  const limit = Math.min(candidates.length, 5);
+  const picked = candidates[Math.floor(Math.random() * limit)];
+  return picked;
+}
+  // -------------------- 4. 자동 코스 여러 개 쌓기 --------------------
+  const [autoCourses, setAutoCourses] = useState([]);
+
   const fetchAutoCourse = async (regionId) => {
     try {
       const region = SEOUL_REGIONS.find((r) => r.id === regionId);
@@ -309,7 +288,7 @@ function RecommendPage() {
     }
   };
 
-  // -------------------- 4. JSX --------------------
+  // -------------------- 5. JSX --------------------
   return (
     <div className="page">
       {/* 헤더 영역 */}
@@ -327,20 +306,20 @@ function RecommendPage() {
         </p>
       </header>
 
-      {/* 지역 선택 + 카카오 버튼들 */}
+      {/* ✅ 지역 선택 카드 */}
       <section
         className="card"
-        style={{ display: "flex", flexDirection: "column", gap: 16 }}
+        style={{ display: "flex", flexDirection: "column", gap: 12 }}
       >
         {/* 지역 버튼 */}
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
           <button
             type="button"
             className={`region-btn ${
-              selectedRegion === "all" ? "selected" : ""
+              selectedRegionId === "all" ? "selected" : ""
             }`}
             onClick={() => {
-              setSelectedRegion("all");
+              setSelectedRegionId("all");
               setKakaoPlaces([]);
               setAutoCourses([]);
             }}
@@ -354,10 +333,10 @@ function RecommendPage() {
               key={region.id}
               type="button"
               className={`region-btn ${
-                selectedRegion === region.id ? "selected" : ""
+                selectedRegionId === region.id ? "selected" : ""
               }`}
               onClick={() => {
-                setSelectedRegion(region.id);
+                setSelectedRegionId(region.id);
                 setKakaoPlaces([]);
                 setAutoCourses([]);
               }}
@@ -367,32 +346,120 @@ function RecommendPage() {
           ))}
         </div>
 
-        {/* 카카오 검색 버튼들 */}
-        <div>
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={() => {
-              if (selectedRegion === "all") {
-                alert("먼저 상단에서 특정 지역을 선택해 주세요!");
-                return;
-              }
-              fetchKakaoPlaces(selectedRegion);
-            }}
-          >
-            이 지역 카카오 추천 보기
-          </button>
+        <p
+          style={{
+            marginTop: 4,
+            fontSize: 12,
+            color: "#6b7280",
+          }}
+        >
+          * 서울 전체를 선택하면 모든 지역의 코스를 함께 보여줘요. 특정 지역을
+          선택하면 그 지역에 맞는 추천만 볼 수 있어요.
+        </p>
+      </section>
+
+      {/* ✅ 탭 바 */}
+      <div
+        style={{
+          display: "flex",
+          gap: 8,
+          marginTop: 16,
+          marginBottom: 8,
+          borderBottom: "1px solid #e5e7eb",
+          paddingBottom: 4,
+        }}
+      >
+        <TabButton
+          label="내 서비스에 등록된 코스"
+          active={activeTab === "user"}
+          onClick={() => setActiveTab("user")}
+        />
+        <TabButton
+          label="이 지역 자동 데이트 코스"
+          active={activeTab === "auto"}
+          onClick={() => setActiveTab("auto")}
+        />
+        <TabButton
+          label="이 지역 카카오 추천 장소"
+          active={activeTab === "kakao"}
+          onClick={() => setActiveTab("kakao")}
+        />
+      </div>
+
+      {/* ✅ 탭별 콘텐츠 */}
+
+      {/* --- 5-1. 내 서비스에 등록된 코스 탭 --- */}
+      {activeTab === "user" && (
+        <section>
+          <h3 style={{ margin: "12px 0 10px", fontSize: 16 }}>
+            내 서비스에 등록된 코스
+          </h3>
+
+          {coursesError && (
+            <p style={{ color: "red", marginBottom: 8 }}>{coursesError}</p>
+          )}
+
+          {loadingCourses ? (
+            <p className="text-muted">코스를 불러오는 중...</p>
+          ) : filteredCourses.length === 0 ? (
+            <p style={{ fontSize: 14, color: "#6b7280" }}>
+              {selectedRegionId === "all"
+                ? "아직 등록된 코스가 없어요. 코스 등록 페이지에서 첫 코스를 만들어볼까요?"
+                : "이 지역에 등록된 코스가 아직 없어요."}
+            </p>
+          ) : (
+            <ul className="course-list">
+              {filteredCourses.map((course) => {
+                const regionLabel = getRegionLabel(course.city);
+                const hasSteps =
+                  Array.isArray(course.steps) && course.steps.length > 0;
+                const firstStep = hasSteps ? course.steps[0] : null;
+
+                const likes =
+                  course.likesCount ??
+                  course.likeCount ??
+                  course.likes ??
+                  undefined;
+
+                return (
+                  <CourseCard
+                    key={course._id}
+                    to={`/courses/${course._id}`}
+                    imageUrl={null} // 🔜 나중에 Unsplash 대표 이미지 연결 예정
+                    mood={course.mood}
+                    title={course.title}
+                    regionLabel={regionLabel}
+                    stepsCount={hasSteps ? course.steps.length : 0}
+                    likesCount={likes}
+                    firstStep={
+                      firstStep?.place ||
+                      firstStep?.title ||
+                      firstStep?.name
+                    }
+                  />
+                );
+              })}
+            </ul>
+          )}
+        </section>
+      )}
+
+      {/* --- 5-2. 자동 생성 데이트 코스 탭 --- */}
+      {activeTab === "auto" && (
+        <section style={{ marginTop: 8 }}>
+          <h3 style={{ marginBottom: 10, fontSize: 16 }}>
+            이 지역 자동 데이트 코스
+          </h3>
 
           <button
             type="button"
             className="btn btn-secondary"
-            style={{ marginLeft: 8 }}
             onClick={() => {
-              if (selectedRegion === "all") {
+              if (selectedRegionId === "all") {
                 alert("먼저 상단에서 특정 지역을 선택해 주세요!");
                 return;
               }
-              fetchAutoCourse(selectedRegion);
+              fetchAutoCourse(selectedRegionId);
             }}
           >
             이 지역 자동 데이트 코스 만들기 (β)
@@ -402,245 +469,190 @@ function RecommendPage() {
             * 카카오맵 API로 이 지역의 카페/맛집/볼거리를 조합해서 코스를
             만들어줘요. 버튼을 여러 번 누르면 다른 조합도 계속 나와요.
           </p>
-        </div>
-      </section>
 
-      {/* ---------------- 5. 내 DB에 저장된 코스 ---------------- */}
-      <section>
-        <h3 style={{ margin: "20px 0 10px", fontSize: 16 }}>
-          내 서비스에 등록된 코스
-        </h3>
+          {autoCourses.length === 0 ? (
+            <p style={{ fontSize: 14, color: "#6b7280", marginTop: 12 }}>
+              아직 자동 코스를 만들지 않았어요. 위 버튼을 눌러 첫 자동 코스를
+              만들어보세요.
+            </p>
+          ) : (
+             <ul className="course-list" style={{ marginTop: 16 }}>
+        {autoCourses.map((course, index) => (
+          <AutoCourseCard
+            key={course.id || index}
+            course={course}
+            index={index}
+          />
+            
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
 
-        {coursesError && (
-          <p style={{ color: "red", marginBottom: 8 }}>{coursesError}</p>
-        )}
+      {/* --- 5-3. 카카오 추천 장소 탭 --- */}
+      {activeTab === "kakao" && (
+        <section style={{ marginTop: 8 }}>
+          <h3 style={{ marginBottom: 10, fontSize: 16 }}>
+            이 지역 카카오 추천 장소
+          </h3>
 
-        {loadingCourses ? (
-          <p className="text-muted">코스를 불러오는 중...</p>
-        ) : filteredCourses.length === 0 ? (
-          <p style={{ fontSize: 14, color: "#6b7280" }}>
-            이 지역에 등록된 코스가 아직 없어요.
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={() => {
+              if (selectedRegionId === "all") {
+                alert("먼저 상단에서 특정 지역을 선택해 주세요!");
+                return;
+              }
+              fetchKakaoPlaces(selectedRegionId);
+            }}
+          >
+            이 지역 카카오 추천 보기
+          </button>
+
+          <p style={{ marginTop: 6, fontSize: 12, color: "#9ca3af" }}>
+            * 카카오맵 API로 이 지역의 인기 카페/맛집/데이트 스팟을 보여줘요.
           </p>
-        ) : (
-          <ul className="course-list">
-            {filteredCourses.map((course) => {
-              const regionLabel = getRegionLabel(course.city);
-              const hasSteps =
-                Array.isArray(course.steps) && course.steps.length > 0;
-              const firstStep = hasSteps ? course.steps[0] : null;
 
-              return (
-                <li key={course._id} className="card course-card">
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      marginBottom: 6,
-                    }}
-                  >
-                    <h4 style={{ fontSize: 18 }}>{course.title}</h4>
-                    {hasSteps && (
-                      <span
-                        style={{
-                          fontSize: 12,
-                          color: "#6b7280",
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        총 {course.steps.length}단계 코스
-                      </span>
-                    )}
-                  </div>
+          {kakaoError && (
+            <p style={{ color: "red", marginBottom: 8 }}>{kakaoError}</p>
+          )}
 
-                  <p style={{ fontSize: 13, color: "#6b7280", marginBottom: 4 }}>
-                    📍 {regionLabel || "지역 정보 없음"}
-                  </p>
+          {kakaoLoading && (
+            <p className="text-muted">카카오 장소 불러오는 중...</p>
+          )}
 
-                  {firstStep && (
-                    <p
-                      style={{ fontSize: 13, color: "#6b7280", marginBottom: 8 }}
-                    >
-                      ⭐ 1단계: {firstStep.place}
-                    </p>
-                  )}
+          {!kakaoLoading && !kakaoError && kakaoPlaces.length === 0 && (
+            <p style={{ fontSize: 14, color: "#6b7280", marginTop: 12 }}>
+              {selectedRegionId === "all"
+                ? "먼저 상단에서 지역을 선택한 뒤, '이 지역 카카오 추천 보기' 버튼을 눌러보세요."
+                : "아직 카카오 추천을 불러오지 않았어요. 위 버튼을 눌러보세요."}
+            </p>
+          )}
 
-                  <Link
-                    to={`/courses/${course._id}`}
-                    className="btn btn-secondary btn-sm"
-                  >
-                    상세 보기
-                  </Link>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </section>
-
-      {/* ---------------- 6. 자동 생성 데이트 코스 리스트 ---------------- */}
-      <section style={{ marginTop: 28 }}>
-        <h3 style={{ marginBottom: 10, fontSize: 16 }}>자동 생성 데이트 코스</h3>
-
-        {autoCourses.length === 0 ? (
-          <p style={{ fontSize: 14, color: "#6b7280" }}>
-            아직 자동 코스를 만들지 않았어요. 상단의{" "}
-            <strong>“이 지역 자동 데이트 코스 만들기 (β)”</strong> 버튼을
-            눌러보세요.
-          </p>
-        ) : (
-          <ul className="course-list">
-            {autoCourses.map((course, index) => (
-              <li key={course.id || index} className="card" style={{ padding: 0 }}>
-                {/* 카드 전체를 클릭하면 상세 페이지로 이동 */}
-                <Link
-                  to={`/auto-courses/${course.id}`}
-                  state={{ course }}
-                  style={{
-                    display: "block",
-                    padding: 16,
-                    textDecoration: "none",
-                    color: "inherit",
-                  }}
-                >
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      marginBottom: 6,
-                      alignItems: "center",
-                    }}
-                  >
-                    <div>
-                      <p
-                        style={{
-                          fontSize: 12,
-                          color: "#9ca3af",
-                          marginBottom: 2,
-                        }}
-                      >
-                        자동 추천 코스 #{autoCourses.length - index}
-                      </p>
-                      <h4 style={{ fontSize: 16 }}>{course.title}</h4>
-                    </div>
-
-                    <span
-                      style={{
-                        fontSize: 12,
-                        color: "#4f46e5",
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      상세 보기 ▶
-                    </span>
-                  </div>
-
-                  <ol
-                    style={{
-                      margin: 0,
-                      paddingLeft: 18,
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: 6,
-                      fontSize: 14,
-                      color: "#4b5563",
-                    }}
-                  >
-                    {course.steps.map((step, idx) => {
-                      const placeObj = step.place || step;
-                      const name =
-                        placeObj.place_name ||
-                        placeObj.name ||
-                        "장소 이름 없음";
-                      const addr =
-                        placeObj.road_address_name ||
-                        placeObj.address_name ||
-                        "";
-
-                      return (
-                        <li key={idx}>
-                          <strong>
-                            {idx + 1}단계 · {step.label || "코스"}
-                          </strong>
-                          {" — "}
-                          {name}
-                          {addr && (
-                            <span style={{ color: "#9ca3af" }}> · {addr}</span>
-                          )}
-                        </li>
-                      );
-                    })}
-                  </ol>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      {/* ---------------- 7. 카카오 추천 장소 리스트 ---------------- */}
-      <section style={{ marginTop: 28 }}>
-        <h3 style={{ marginBottom: 10, fontSize: 16 }}>이 지역 카카오 추천 장소</h3>
-
-        {kakaoError && (
-          <p style={{ color: "red", marginBottom: 8 }}>{kakaoError}</p>
-        )}
-
-        {kakaoLoading && (
-          <p className="text-muted">카카오 장소 불러오는 중...</p>
-        )}
-
-        {!kakaoLoading && !kakaoError && kakaoPlaces.length === 0 && (
-          <p style={{ fontSize: 14, color: "#6b7280" }}>
-            {selectedRegion === "all"
-              ? "먼저 상단에서 지역을 선택한 뒤, '이 지역 카카오 추천 보기' 버튼을 눌러보세요."
-              : "아직 카카오 추천을 불러오지 않았어요. 버튼을 눌러보세요."}
-          </p>
-        )}
-
-        {kakaoPlaces.length > 0 && (
-          <ul className="course-list">
-            {kakaoPlaces.map((place) => (
-              <li key={place.id} className="card" style={{ padding: 16 }}>
-                <h4 style={{ fontSize: 15, marginBottom: 4 }}>
-                  {place.place_name}
-                </h4>
-                <p
-                  style={{
-                    fontSize: 13,
-                    color: "#6b7280",
-                    marginBottom: 4,
-                  }}
-                >
-                  📍{" "}
-                  {place.road_address_name ||
-                    place.address_name ||
-                    "주소 정보 없음"}
-                </p>
-                {place.phone && (
+          {kakaoPlaces.length > 0 && (
+            <ul className="course-list" style={{ marginTop: 16 }}>
+              {kakaoPlaces.map((place) => (
+                <li key={place.id} className="card" style={{ padding: 16 }}>
+                  <h4 style={{ fontSize: 15, marginBottom: 4 }}>
+                    {place.place_name}
+                  </h4>
                   <p
                     style={{
-                      fontSize: 12,
+                      fontSize: 13,
                       color: "#6b7280",
                       marginBottom: 4,
                     }}
                   >
-                    ☎ {place.phone}
+                    📍{" "}
+                    {place.road_address_name ||
+                      place.address_name ||
+                      "주소 정보 없음"}
                   </p>
-                )}
-                <a
-                  href={place.place_url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="btn btn-secondary btn-sm"
-                >
-                  카카오맵에서 보기
-                </a>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+                  {place.phone && (
+                    <p
+                      style={{
+                        fontSize: 12,
+                        color: "#6b7280",
+                        marginBottom: 4,
+                      }}
+                    >
+                      ☎ {place.phone}
+                    </p>
+                  )}
+                  <a
+                    href={place.place_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="btn btn-secondary btn-sm"
+                  >
+                    카카오맵에서 보기
+                  </a>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
     </div>
+  );
+}
+
+// ✅ 탭 버튼 작은 컴포넌트
+function TabButton({ label, active, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        border: "none",
+        background: "transparent",
+        padding: "6px 12px",
+        borderRadius: 999,
+        fontSize: 13,
+        cursor: "pointer",
+        color: active ? "#111827" : "#6b7280",
+        fontWeight: active ? 600 : 500,
+        backgroundColor: active ? "#e0e7ff" : "transparent",
+      }}
+    >
+      {label}
+    </button>
+  );
+}
+// ✅ 자동 생성 코스용 카드 컴포넌트
+function AutoCourseCard({ course, index }) {
+  const firstStep = course.steps?.[0];
+  const placeObj = firstStep?.place || firstStep || {};
+  const firstName =
+    placeObj.place_name ||
+    placeObj.name ||
+    firstStep?.label ||
+    "첫 단계 정보 없음";
+
+  const stepsCount = course.steps?.length || 0;
+
+  return (
+    <li className="course-card-wrapper">
+      <Link
+        to={`/auto-courses/${course.id}`}
+        state={{ course }}
+        className="course-card-link"
+        style={{ textDecoration: "none", color: "inherit" }}
+      >
+        <article className="course-card-outer">
+          {/* 상단 이미지 영역 – 지금은 그라디언트 + 배지 */}
+          <div className="course-card-image-wrap">
+            <div className="course-card-image-inner">
+              {/* 이미지 없으니 placeholder만 */}
+              <div className="course-card-image-placeholder" />
+              <span className="course-card-mood-badge">자동 생성</span>
+            </div>
+          </div>
+
+          {/* 내용 영역 */}
+          <div className="course-card-body">
+            <p className="course-card-meta-small">
+              자동 추천 코스 #{index + 1}
+            </p>
+
+            <h4 className="course-card-title">{course.title}</h4>
+
+            {firstName && (
+              <p className="course-card-firststep">1단계: {firstName}</p>
+            )}
+
+            <div className="course-card-footer">
+              <span className="course-card-footer-meta">
+                {stepsCount}단계 코스
+              </span>
+              {/* 필요하면 여기에 “상세 보기 ▶” 같은 텍스트도 넣을 수 있음 */}
+            </div>
+          </div>
+        </article>
+      </Link>
+    </li>
   );
 }
 

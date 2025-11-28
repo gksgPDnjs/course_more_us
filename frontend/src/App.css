@@ -116,3 +116,8 @@
   border-color: #4f46e5;
   box-shadow: 0 4px 10px rgba(79, 70, 229, 0.35);
 }
+.course-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 24px;
+}
