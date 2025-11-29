@@ -13,6 +13,8 @@ function LoginPage() {
   const [form, setForm] = useState({
     email: "",
     password: "",
+    nickname: "",
+    bio: "",
   });
 
   const [error, setError] = useState("");
@@ -36,12 +38,17 @@ function LoginPage() {
 
       if (mode === "login") {
         // 🔐 로그인
+        const payload = {
+          email: form.email,
+          password: form.password,
+        };
+
         const res = await fetch(`${API_BASE_URL}/api/auth/login`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify(form),
+          body: JSON.stringify(payload),
         });
 
         const data = await res.json().catch(() => ({}));
@@ -50,7 +57,7 @@ function LoginPage() {
           throw new Error(data.message || "로그인 실패");
         }
 
-        // 백엔드 응답: { token, user: { id, email } }
+        // 백엔드 응답: { token, user: { id, email, nickname, bio } }
         localStorage.setItem("token", data.token);
         localStorage.setItem("currentUser", JSON.stringify(data.user));
 
@@ -59,12 +66,19 @@ function LoginPage() {
         window.location.reload(); // 바로 상태 반영
       } else {
         // 🆕 회원가입
+        const payload = {
+          email: form.email,
+          password: form.password,
+          nickname: form.nickname,
+          bio: form.bio,
+        };
+
         const res = await fetch(`${API_BASE_URL}/api/auth/register`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify(form),
+          body: JSON.stringify(payload),
         });
 
         const data = await res.json().catch(() => ({}));
@@ -75,7 +89,7 @@ function LoginPage() {
 
         alert("회원가입이 완료됐어요! 이제 로그인 해 주세요 😊");
         setMode("login");
-        // 비밀번호만 비워주기
+        // 비밀번호만 비우고, 나머지는 그대로 둬도 됨
         setForm((prev) => ({ ...prev, password: "" }));
       }
     } catch (err) {
@@ -97,7 +111,7 @@ function LoginPage() {
       : "회원가입";
 
   return (
-    <div className="app" style={{ maxWidth: 400, margin: "40px auto" }}>
+    <div className="app" style={{ maxWidth: 480, margin: "40px auto" }}>
       <h1 className="app-title" style={{ marginBottom: 8 }}>
         {title}
       </h1>
@@ -130,12 +144,38 @@ function LoginPage() {
       <p style={{ marginBottom: 16, fontSize: 13, color: "#666" }}>
         {mode === "login"
           ? "이미 가입한 이메일과 비밀번호로 로그인해 주세요."
-          : "이메일과 비밀번호를 입력해 새 계정을 만들어요."}
+          : "이메일, 닉네임, 비밀번호를 입력해 새 계정을 만들어요. 닉네임과 한 줄 소개는 나중에 코스를 올릴 때 다른 유저들에게 보여져요."}
       </p>
 
       {error && <div className="alert alert-error">{error}</div>}
 
       <form onSubmit={handleSubmit} className="course-form">
+        {/* 회원가입에서만 보이는 필드들 */}
+        {mode === "register" && (
+          <>
+            <input
+              className="input"
+              name="nickname"
+              placeholder="닉네임 (2~20자)"
+              value={form.nickname}
+              onChange={handleChange}
+              minLength={2}
+              maxLength={20}
+              required
+            />
+            <textarea
+              className="textarea"
+              name="bio"
+              placeholder="한 줄 소개 (선택)  예: 감성 카페 코스 좋아하는 대학생이에요 ☺️"
+              value={form.bio}
+              onChange={handleChange}
+              rows={2}
+              maxLength={120}
+              style={{ marginBottom: 4 }}
+            />
+          </>
+        )}
+
         <input
           className="input"
           name="email"

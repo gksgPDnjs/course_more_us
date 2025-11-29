@@ -3,7 +3,7 @@ import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { SEOUL_REGIONS } from "./data/regions";
 
-// ⭐ Unsplash 이미지
+// Unsplash
 import { fetchUnsplashHero } from "./api/unsplash";
 import { buildUnsplashKeyword } from "./api/unsplashKeyword";
 
@@ -19,7 +19,7 @@ function getRegionLabelById(cityId) {
   return region ? region.label : cityId;
 }
 
-// 🔍 카카오 키워드 검색 (좌표 기반)
+// 카카오 키워드 검색 (좌표 기반)
 async function searchByCategory(region, keyword) {
   if (!KAKAO_REST_KEY) {
     console.warn("KAKAO REST KEY 누락");
@@ -58,7 +58,7 @@ async function searchByCategory(region, keyword) {
     (p) => !blacklistRegex.test(p.place_name || "")
   );
 
-  // 카페 쪽 필터
+  // 카페 필터
   if (keyword.includes("카페")) {
     const cafeRegex = /(카페|coffee|커피|브런치|디저트)/i;
     const onlyCafe = filtered.filter((p) =>
@@ -66,7 +66,7 @@ async function searchByCategory(region, keyword) {
     );
     if (onlyCafe.length > 0) filtered = onlyCafe;
   }
-  // 맛집 쪽 필터
+  // 맛집 필터
   else if (keyword.includes("맛집")) {
     const notCafeRegex = /(카페|coffee|커피|디저트|베이커리)/i;
     const onlyFood = filtered.filter(
@@ -82,7 +82,7 @@ async function searchByCategory(region, keyword) {
   return picked;
 }
 
-// ⭐ 자동 코스 생성 (카카오)
+// 자동 코스 생성 (카카오)
 async function buildAutoCourse(region) {
   if (!region || region.id === "all") return null;
 
@@ -125,12 +125,13 @@ function getStepPlaceName(step) {
 function RandomPage() {
   const [selectedRegionId, setSelectedRegionId] = useState("all");
 
-  const [result, setResult] = useState(null); // 뽑힌 코스 (user 또는 auto)
+  const [result, setResult] = useState(null); // 뽑힌 코스
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  // Unsplash 썸네일
+  // Unsplash
   const [heroUrl, setHeroUrl] = useState(null);
+  const [heroLoading, setHeroLoading] = useState(false);
 
   const selectedRegion =
     SEOUL_REGIONS.find((r) => r.id === selectedRegionId) || SEOUL_REGIONS[0];
@@ -140,10 +141,12 @@ function RandomPage() {
     setError("");
     setResult(null);
     setHeroUrl(null);
+
     setLoading(true);
 
     try {
-      const regionId = selectedRegion.id;
+      const region = selectedRegion;
+      const regionId = region?.id || "all";
 
       const query =
         regionId && regionId !== "all"
@@ -159,11 +162,11 @@ function RandomPage() {
         })
         .catch(() => null);
 
-      // 2) 카카오 기반 자동 코스
+      // 2) 카카오 기반 자동 코스 (서울 전체일 땐 제외)
       const autoPromise =
-        !KAKAO_REST_KEY || !selectedRegion.center
+        regionId === "all" || !KAKAO_REST_KEY || !region?.center
           ? Promise.resolve(null)
-          : buildAutoCourse(selectedRegion).catch(() => null);
+          : buildAutoCourse(region).catch(() => null);
 
       const [dbCourse, autoCourse] = await Promise.all([
         dbPromise,
@@ -192,32 +195,55 @@ function RandomPage() {
 
   /* ---------- result 바뀔 때 Unsplash 이미지 로딩 ---------- */
   useEffect(() => {
-    if (!result) return;
+    if (!result) {
+      setHeroUrl(null);
+      return;
+    }
 
-    const keyword = buildUnsplashKeyword(
+    const keywordCourse =
       result.source === "auto"
         ? { ...result, city: result.regionId }
-        : result
-    );
+        : result || {};
+
+    const keyword = buildUnsplashKeyword(keywordCourse);
     console.log("🧩 RandomPage Unsplash keyword:", keyword);
 
     async function loadHero() {
-      const url = await fetchUnsplashHero(keyword);
-      console.log("🎨 RandomPage heroUrl:", url);
-      if (url) setHeroUrl(url);
+      try {
+        setHeroLoading(true);
+        const url = await fetchUnsplashHero(keyword);
+        console.log("🎨 RandomPage heroUrl:", url);
+        if (url) setHeroUrl(url);
+      } catch (e) {
+        console.error("RandomPage hero image error:", e);
+      } finally {
+        setHeroLoading(false);
+      }
     }
 
     loadHero();
   }, [result]);
 
-  /* ---------- 코스 정보 ---------- */
-  const resultRegionLabel = result
-    ? result.source === "auto"
-      ? getRegionLabelById(result.regionId)
-      : getRegionLabelById(result.city) || selectedRegion?.label
-    : "";
+  /* ---------- 코스 정보 파생 값 ---------- */
+  let resultRegionLabel = "";
+  let steps = [];
+  let firstStepName = "";
 
-  const steps = Array.isArray(result?.steps) ? result.steps : [];
+  if (result && Array.isArray(result.steps)) {
+    steps = result.steps;
+    const first = steps[0];
+    firstStepName = getStepPlaceName(first);
+
+    if (result.source === "auto") {
+      resultRegionLabel = getRegionLabelById(result.regionId);
+    } else {
+      // user 코스: city 없을 수도 있으니 방어
+      resultRegionLabel =
+        getRegionLabelById(result.city) ||
+        getRegionLabelById(result.regionId) ||
+        "";
+    }
+  }
 
   const handleCopyUrl = async () => {
     try {
@@ -229,21 +255,16 @@ function RandomPage() {
     }
   };
 
+  const isRerollLoading = loading; // 버튼 로딩 class 용
+
   /* ------------------ JSX ------------------ */
 
   return (
-    <div className="page">
+    <div className="random-page">
       {/* 헤더 */}
-      <header
-        style={{
-          marginBottom: 20,
-          display: "flex",
-          flexDirection: "column",
-          gap: 6,
-        }}
-      >
+      <header className="random-header">
         <h2 className="section-title">랜덤 데이트 코스</h2>
-        <p style={{ fontSize: 14, color: "#6b7280" }}>
+        <p>
           서울에서 <strong>어디로</strong> 갈까요? 지역을 고르고 버튼을 누르면,
           <br />
           현재 등록된 코스와 자동 생성 코스 중에서 하나를 랜덤으로 뽑아드려요.
@@ -251,249 +272,175 @@ function RandomPage() {
       </header>
 
       {/* 지역 선택 카드 */}
-      <section
-        className="card"
-        style={{ display: "flex", flexDirection: "column", gap: 12 }}
+      {/* 지역 선택 카드 (예쁜 칩 + 설명 + 액션 버튼) */}
+<section className="card random-region-card">
+  <div className="random-region-header">
+    <div>
+      <p className="random-region-eyebrow">어디서 시작해볼까요?</p>
+      <h3 className="random-region-title">
+        {selectedRegionId === "all"
+          ? "서울 전체에서 랜덤으로 뽑기"
+          : `${selectedRegion?.label}에서 랜덤으로 뽑기`}
+      </h3>
+      <p className="random-region-sub">
+        상단에서 지역을 고른 뒤, 아래 버튼을 누르면 현재 등록된 코스와
+        자동 생성 코스 중 하나를 뽑아드려요.
+      </p>
+    </div>
+
+    <button
+      className={`btn btn-primary random-reroll-btn ${
+        loading ? "random-reroll-btn-loading" : ""
+      }`}
+      onClick={fetchRandom}
+      disabled={loading}
+    >
+      {loading ? "코스 뽑는 중..." : "이 지역에서 코스 뽑기 🎲"}
+    </button>
+  </div>
+
+  <div className="random-region-pills">
+    {SEOUL_REGIONS.map((region) => (
+      <button
+        key={region.id}
+        type="button"
+        className={`region-btn ${
+          selectedRegionId === region.id ? "selected" : ""
+        }`}
+        onClick={() => {
+          setSelectedRegionId(region.id);
+          setResult(null);
+          setError("");
+          setHeroUrl(null);
+        }}
       >
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-          {SEOUL_REGIONS.map((region) => (
-            <button
-              key={region.id}
-              type="button"
-              className={`region-btn ${
-                selectedRegionId === region.id ? "selected" : ""
-              }`}
-              onClick={() => {
-                setSelectedRegionId(region.id);
-                setResult(null);
-                setError("");
-                setHeroUrl(null);
-              }}
-            >
-              {region.label}
-            </button>
-          ))}
-        </div>
+        {region.label}
+      </button>
+    ))}
+  </div>
 
-        <p style={{ fontSize: 12, color: "#6b7280" }}>
-          * <strong>서울 전체</strong>를 선택하면 모든 지역에서 랜덤으로 코스를
-          뽑아요.
-        </p>
-
-        <div style={{ marginTop: 4 }}>
-          <button
-            className="btn btn-primary"
-            onClick={fetchRandom}
-            disabled={loading}
-          >
-            {loading ? "뽑는 중..." : "이 지역에서 코스 뽑기 🎲"}
-          </button>
-        </div>
-      </section>
+  <p className="random-region-help">
+    <span>TIP</span>
+    <span>
+      <strong>서울 전체</strong>를 선택하면 모든 지역의 코스를 섞어서 뽑고,
+      특정 지역을 선택하면 그 지역에 맞는 코스만 골라줘요.
+    </span>
+  </p>
+</section>
 
       {/* 결과 섹션 */}
-      <section style={{ marginTop: 24 }}>
-        <h3 style={{ fontSize: 16, marginBottom: 12 }}>이번에 뽑힌 코스</h3>
+      <section className="random-result-section">
+        <h3>이번에 뽑힌 코스</h3>
 
-        {loading && <p className="text-muted">코스를 뽑는 중입니다...</p>}
+        {loading && (
+          <p className="text-muted">코스를 뽑는 중입니다...</p>
+        )}
 
-        {error && <p style={{ color: "red", marginTop: 4 }}>{error}</p>}
+        {error && <p className="random-error">{error}</p>}
 
         {!loading && !error && !result && (
-          <p style={{ fontSize: 14, color: "#6b7280" }}>
+          <p className="random-hint">
             위에서 지역을 선택하고{" "}
             <strong>“이 지역에서 코스 뽑기 🎲”</strong> 버튼을 눌러보세요.
           </p>
         )}
 
         {result && (
-          <div
-            className="card"
-            style={{
-              marginTop: 8,
-              maxWidth: 880,
-              marginInline: "auto",
-              padding: 0,
-              overflow: "hidden",
-            }}
-          >
-            {/* 상단 이미지 */}
-            <div
-              style={{
-                width: "100%",
-                height: 260,
-                background:
-                  "linear-gradient(135deg,#e5e7eb,#e0f2fe,#fce7f3)",
-                overflow: "hidden",
-              }}
-            >
-              {heroUrl && (
+          <div className="random-result-card">
+            {/* 이미지 영역 */}
+            <div className="random-result-image-wrap">
+              <div className="random-result-image-bg" />
+              {heroLoading ? (
+                <div className="random-result-image-skeleton">
+                  이미지 불러오는 중...
+                </div>
+              ) : heroUrl ? (
                 <img
                   src={heroUrl}
                   alt="랜덤 코스 대표 이미지"
-                  style={{
-                    width: "100%",
-                    height: "100%",
-                    objectFit: "cover",
-                    display: "block",
-                  }}
+                  className="random-result-image"
                   onError={(e) => {
                     e.target.style.display = "none";
                   }}
                 />
+              ) : (
+                <div className="random-result-image-skeleton">
+                  데이트 무드 찾는 중...
+                </div>
               )}
+
+              <div className="random-result-badges">
+                <span className="random-result-badge-type">
+                  {result.source === "auto"
+                    ? "자동 생성 코스"
+                    : "유저가 만든 코스"}
+                </span>
+                <span className="random-result-badge-steps">
+                  {steps.length}단계 코스
+                </span>
+              </div>
             </div>
 
             {/* 본문 영역 */}
-            <div style={{ padding: "20px 24px 16px" }}>
-              <h4
-                style={{
-                  fontSize: 20,
-                  fontWeight: 700,
-                  marginBottom: 6,
-                }}
-              >
-                {result.title}
-              </h4>
+            <div className="random-result-body">
+              <h4 className="random-result-title">{result.title}</h4>
 
-              <p
-                style={{
-                  fontSize: 13,
-                  color: "#6b7280",
-                  marginBottom: 12,
-                }}
-              >
-                📍 {resultRegionLabel || "지역 정보 없음"} ·{" "}
-                {steps.length}단계 코스{" "}
+              <p className="random-result-meta">
+                📍 {resultRegionLabel || "지역 정보 없음"} · {steps.length}
+                단계 코스 ·{" "}
                 {result.source === "auto"
-                  ? "· 자동 생성 코스"
-                  : "· 유저가 만든 코스"}
+                  ? "자동 생성 코스"
+                  : "유저가 만든 코스"}
+              </p>
+
+              {firstStepName && (
+                <p className="random-result-firststep">
+                  <span>1단계</span>
+                  {firstStepName}
+                </p>
+              )}
+
+              <p className="random-result-desc">
+                코스 일정은 아래 순서대로 이동해보면 좋아요. 마음에 들면 상세
+                페이지에서 카카오맵 링크와 메모를 같이 확인할 수 있어요.
               </p>
 
               {/* 코스 일정 리스트 */}
-              <div style={{ marginTop: 8 }}>
-                <h5
-                  style={{
-                    fontSize: 14,
-                    fontWeight: 600,
-                    marginBottom: 8,
-                  }}
-                >
-                  코스 일정
-                </h5>
+              <div className="random-step-list">
+                {steps.map((step, index) => {
+                  const stepNo = index + 1;
+                  const name = getStepPlaceName(step);
+                  const label =
+                    step.label ||
+                    step.type ||
+                    (stepNo === 1 ? "시작" : "코스");
 
-                <div
-                  style={{
-                    borderTop: "1px solid #e5e7eb",
-                    marginTop: 4,
-                    paddingTop: 8,
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: 8,
-                  }}
-                >
-                  {steps.map((step, index) => {
-                    const stepNo = index + 1;
-                    const name = getStepPlaceName(step);
-                    const time = step.time || "";
-                    const label =
-                      step.label || step.type || (stepNo === 1 ? "시작" : "코스");
-
-                    return (
-                      <div
-                        key={index}
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "space-between",
-                          gap: 12,
-                          padding: "6px 0",
-                        }}
-                      >
-                        <div style={{ display: "flex", gap: 12 }}>
-                          <div
-                            style={{
-                              width: 28,
-                              height: 28,
-                              borderRadius: "999px",
-                              backgroundColor: "#ecfdf5",
-                              border: "1px solid #bbf7d0",
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "center",
-                              fontSize: 13,
-                              fontWeight: 600,
-                              color: "#15803d",
-                            }}
-                          >
-                            {stepNo}
-                          </div>
-                          <div>
-                            <div
-                              style={{
-                                fontSize: 13,
-                                fontWeight: 600,
-                                marginBottom: 2,
-                              }}
-                            >
-                              {name}
-                            </div>
-                            <div
-                              style={{
-                                fontSize: 12,
-                                color: "#6b7280",
-                              }}
-                            >
-                              {label}
-                            </div>
-                          </div>
-                        </div>
-
-                        {time && (
-                          <div
-                            style={{
-                              fontSize: 12,
-                              color: "#6b7280",
-                              minWidth: 52,
-                              textAlign: "right",
-                            }}
-                          >
-                            {time}
-                          </div>
-                        )}
+                  return (
+                    <div key={index} className="random-step-item">
+                      <div className="random-step-index">{stepNo}</div>
+                      <div className="random-step-info">
+                        <div className="random-step-name">{name}</div>
+                        <div className="random-step-label">{label}</div>
                       </div>
-                    );
-                  })}
-                </div>
+                    </div>
+                  );
+                })}
               </div>
 
               {/* 버튼들 */}
-              <div
-                style={{
-                  marginTop: 20,
-                  display: "flex",
-                  flexWrap: "wrap",
-                  gap: 8,
-                  justifyContent: "flex-start",
-                }}
-              >
-                {/* 다시 뽑기 (메인) */}
+              <div className="random-result-actions">
                 <button
                   type="button"
-                  className="btn btn-primary"
+                  className={
+                    "btn btn-primary random-reroll-btn" +
+                    (isRerollLoading ? " random-reroll-btn-loading" : "")
+                  }
                   onClick={fetchRandom}
                   disabled={loading}
-                  style={{
-                    flexShrink: 0,
-                    minWidth: 140,
-                    backgroundColor: "#166534",
-                    borderColor: "#14532d",
-                  }}
                 >
                   {loading ? "다시 뽑는 중..." : "다시 뽑기 🎲"}
                 </button>
 
-                {/* 상세 페이지 보기 → 기존 상세 화면으로 이동 */}
                 <Link
                   to={
                     result.source === "auto"
@@ -502,22 +449,14 @@ function RandomPage() {
                   }
                   state={result.source === "auto" ? { course: result } : null}
                   className="btn btn-secondary"
-                  style={{
-                    flexShrink: 0,
-                    minWidth: 140,
-                  }}
                 >
                   상세 페이지 보기
                 </Link>
 
-                {/* URL 공유(주소 복사) */}
                 <button
                   type="button"
                   className="btn btn-secondary btn-sm"
                   onClick={handleCopyUrl}
-                  style={{
-                    flexShrink: 0,
-                  }}
                 >
                   URL 복사
                 </button>

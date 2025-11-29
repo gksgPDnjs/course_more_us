@@ -2,16 +2,30 @@
 
 const ACCESS_KEY = import.meta.env.VITE_UNSPLASH_ACCESS_KEY;
 
-console.log("🔑 Unsplash ACCESS_KEY in unsplash.js:", ACCESS_KEY);
+// keyword별로 여러 장의 후보 이미지를 저장하는 캐시
+// key: string(keyword), value: { urls: string[], index: number }
+const unsplashCache = new Map();
+
+/** 간단한 문자열 해시 → 0 이상 정수 */
+function hashString(str) {
+  let h = 0;
+  for (let i = 0; i < str.length; i += 1) {
+    h = (h * 31 + str.charCodeAt(i)) | 0;
+  }
+  return Math.abs(h);
+}
 
 /**
  * Unsplash에서 대표 이미지를 한 장 가져오는 함수
- * - Unsplash photos/random 사용
- * - 결과가 마음에 안 들면 null 리턴 → 카드에서는 그라디언트만 보이도록
- * @param {string} keyword - 검색어 (예: "Hongdae cozy cafe date")
+ * - 같은 keyword에 대해 처음 한 번만 API 호출
+ * - 여러 장 받아서 캐시에 저장
+ * - seed(코스 id 등)를 이용해서 각 코스마다 다른 인덱스를 고름
+ *
+ * @param {string} keyword - 검색어
+ * @param {string} [seed] - 같은 keyword 안에서 서로 다른 이미지를 쓰고 싶을 때 사용 (course id 등)
  * @returns {Promise<string|null>} 이미지 URL 또는 null
  */
-export async function fetchUnsplashHero(keyword) {
+export async function fetchUnsplashHero(keyword, seed) {
   if (!ACCESS_KEY) {
     console.warn(
       "⚠️ VITE_UNSPLASH_ACCESS_KEY가 설정되어 있지 않습니다. .env 파일을 확인해주세요."
@@ -20,22 +34,39 @@ export async function fetchUnsplashHero(keyword) {
   }
 
   const baseQuery = "Seoul indoor cozy cafe restaurant date warm light";
-  const query =
+  const cleanKeyword =
     keyword && keyword.trim().length > 0 ? keyword.trim() : baseQuery;
+  const cacheKey = cleanKeyword;
 
-  console.log("📸 Unsplash 랜덤 검색어:", query);
+  // 1️⃣ 캐시에 이미지가 이미 있으면, 거기서 하나 골라서 반환
+  const cached = unsplashCache.get(cacheKey);
+  if (cached && Array.isArray(cached.urls) && cached.urls.length > 0) {
+    const { urls } = cached;
 
+    let idx = 0;
+    if (seed && urls.length > 1) {
+      // 같은 seed면 항상 같은 인덱스 → 같은 코스면 같은 이미지, 다른 코스면 보통 다른 이미지
+      idx = hashString(String(seed)) % urls.length;
+    } else {
+      // seed 없으면 순서대로 돌려쓰기
+      idx = cached.index % urls.length;
+      cached.index += 1;
+    }
+
+    return urls[idx];
+  }
+
+  // 2️⃣ 캐시에 없으면 Unsplash에 한 번만 요청해서 여러 장 받아오기
   try {
-    // Unsplash 랜덤 API 사용
-    const url = `https://api.unsplash.com/photos/random?query=${encodeURIComponent(
-      query
-    )}&orientation=landscape&content_filter=high&count=6&client_id=${ACCESS_KEY}`;
-
-    console.log("🌐 Unsplash RANDOM 요청 URL:", url);
+    const url =
+      `https://api.unsplash.com/photos/random` +
+      `?query=${encodeURIComponent(cleanKeyword)}` +
+      `&orientation=landscape` +
+      `&content_filter=high` +
+      `&count=8` +
+      `&client_id=${ACCESS_KEY}`;
 
     const res = await fetch(url);
-    console.log("📥 Unsplash RANDOM 응답 status:", res.status);
-
     if (!res.ok) {
       const text = await res.text().catch(() => "");
       console.error("Unsplash RANDOM 요청 실패:", res.status, text);
@@ -48,17 +79,16 @@ export async function fetchUnsplashHero(keyword) {
       return null;
     }
 
-    // photos/random: 단일 객체 또는 배열
     const results = Array.isArray(data) ? data : [data];
-
     if (!results.length) {
       console.warn("⚠️ Unsplash RANDOM 결과가 비어있습니다.", data);
       return null;
     }
 
-    // 🚫 "간판/외관/길거리/포스터/광고" 느낌 강한 사진들 최대한 제외
+    // ---------- 필터 로직 (살짝 완화된 버전) ----------
+
     const NEGATIVE =
-      /(crosswalk|intersection|highway|station|subway|train|railway|platform|signboard|sign|banner|poster|billboard|advertisement|ad|sale|discount|storefront|shop exterior|road|alley|stall|overpass|skyline|cityscape|traffic)/i;
+      /(crosswalk|intersection|highway|station|subway|train|railway|platform|signboard|sign\b|banner|poster|billboard|advertisement|ad\b|sale|discount|storefront|shop exterior|road|alley|stall|overpass|skyline|cityscape|traffic)/i;
 
     function getText(photo) {
       const desc = photo.description || "";
@@ -70,74 +100,55 @@ export async function fetchUnsplashHero(keyword) {
       return `${desc} ${alt} ${tags}`;
     }
 
-    // 1차: “거리/간판/외관” 느낌이 강한 것들 제거 (이건 강하게 유지)
     let candidates = results.filter((photo) => {
       const text = getText(photo);
       return !NEGATIVE.test(text);
     });
 
-    // 2차: 실내/카페/데이트 느낌이 나면 *가산점*을 주되,
-    //     없다고 해서 버리지는 않음 (완화된 필터)
     const POSITIVE =
-      /(indoor|interior|table|dining|dinner|cafe|coffee|restaurant|brunch|dessert|couple|date|cozy)/i;
+      /(indoor|interior|table|dining|dinner|cafe|coffee|restaurant|brunch|dessert|couple|date)/i;
 
     const positiveList = candidates.filter((photo) => {
       const text = getText(photo);
       return POSITIVE.test(text);
     });
 
-    // 긍정 키워드가 하나라도 있으면 그것만 사용
     if (positiveList.length > 0) {
       candidates = positiveList;
     }
 
-    // 그래도 비었으면 → 처음 결과 전체라도 사용 (최종 fallback)
     if (!candidates.length) {
       candidates = results;
     }
 
-    // 최종 후보 중에서 랜덤 1개 선택
-    const idx = Math.floor(Math.random() * candidates.length);
-    const chosen = candidates[idx];
+    const urls = candidates
+      .map((photo) => photo?.urls?.regular || photo?.urls?.small || null)
+      .filter(Boolean);
 
-    if (!chosen || !chosen.urls) {
-      console.warn("Unsplash 결과에 urls가 없습니다. data:", chosen);
+    if (!urls.length) {
+      console.warn("Unsplash 결과에 usable URL이 없습니다.", candidates);
       return null;
     }
 
-    const imgUrl = chosen.urls.regular || chosen.urls.small || null;
-    console.log("✅ Unsplash 최종 선택 이미지 URL:", imgUrl);
-    return imgUrl;
+    // seed 기준으로 첫 인덱스 선택
+    let firstIdx = 0;
+    if (seed && urls.length > 1) {
+      firstIdx = hashString(String(seed)) % urls.length;
+    }
+
+    unsplashCache.set(cacheKey, {
+      urls,
+      index: firstIdx + 1, // 다음 호출용
+    });
+
+    return urls[firstIdx];
   } catch (err) {
     console.error("Unsplash RANDOM 통신 에러:", err);
     return null;
   }
 }
 
-/**
- * 코스 정보로부터 Unsplash 검색 키워드 만들기
- * RecommendPage에서 카드 썸네일용으로 사용
- */
-export function buildUnsplashKeyword(course) {
-  const base = "Seoul cozy indoor date";
-
-  if (!course) return base;
-
-  const parts = [];
-
-  if (course.mood) parts.push(course.mood);
-  if (course.title) parts.push(course.title);
-  // city(지역 id)가 들어있으면 살짝 힌트 정도만
-  if (course.city) parts.push(course.city);
-
-  const keyword = parts.join(" ").trim();
-  return keyword.length > 0 ? `${keyword} date course` : base;
-}
-
-/**
- * RecommendPage에서 쓰는 이름과 맞추기 위한 래퍼 함수
- * 내부에서는 위에서 만든 fetchUnsplashHero를 그대로 사용
- */
-export async function fetchUnsplashImage(keyword) {
-  return fetchUnsplashHero(keyword);
+/** 이름만 다른 래퍼 (기존 코드 호환용) */
+export async function fetchUnsplashImage(keyword, seed) {
+  return fetchUnsplashHero(keyword, seed);
 }

@@ -8,6 +8,8 @@ import { fetchUnsplashImage } from "./api/unsplash";
 
 const API_BASE_URL = "http://localhost:4000";
 
+/* ---------------- 공통 유틸 / 간단 auth 훅 ---------------- */
+
 // 지역 객체에서 "대표 이름" 하나 뽑기 (핫플 검색용)
 function getRegionMainName(region) {
   if (Array.isArray(region.keywords) && region.keywords.length > 0) {
@@ -26,7 +28,20 @@ function getRegionLabel(cityId) {
   return region ? region.label : cityId;
 }
 
+// App의 useAuth와 동일한 간단 버전
+function useAuth() {
+  const savedUser = localStorage.getItem("currentUser");
+  const currentUser = savedUser ? JSON.parse(savedUser) : null;
+  const token = localStorage.getItem("token");
+  const currentUserId = currentUser && (currentUser.id || currentUser._id);
+  const isLoggedIn = !!token && !!currentUser;
+  return { currentUser, token, currentUserId, isLoggedIn };
+}
+
 function RecommendPage() {
+  // ✅ 로그인 정보
+  const { token, isLoggedIn } = useAuth();
+
   // ✅ 지역 선택 (id 기준: "all", "gangnam" ...)
   const [selectedRegionId, setSelectedRegionId] = useState("all");
 
@@ -38,6 +53,10 @@ function RecommendPage() {
   const [loadingCourses, setLoadingCourses] = useState(false);
   const [coursesError, setCoursesError] = useState("");
 
+  // 💜 내가 찜한 코스 id 목록
+  const [likedIds, setLikedIds] = useState([]);
+  const [loadingLikes, setLoadingLikes] = useState(false);
+
   // ⬇ 유저 코스 카드 썸네일 이미지 (Unsplash)
   const [cardImages, setCardImages] = useState({});
 
@@ -45,6 +64,7 @@ function RecommendPage() {
   const [autoCardImages, setAutoCardImages] = useState({});
   const [autoCourses, setAutoCourses] = useState([]);
 
+  // --- 코스 목록 ---
   useEffect(() => {
     const fetchCourses = async () => {
       try {
@@ -72,6 +92,37 @@ function RecommendPage() {
     fetchCourses();
   }, []);
 
+  // --- 내가 찜한 코스 id 목록 ---
+  useEffect(() => {
+    if (!isLoggedIn) {
+      setLikedIds([]);
+      return;
+    }
+
+    const fetchLiked = async () => {
+      try {
+        setLoadingLikes(true);
+        const res = await fetch(`${API_BASE_URL}/api/courses/liked/me`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await res.json().catch(() => []);
+
+        if (!res.ok) {
+          throw new Error(data?.message || "찜한 코스 목록 조회 실패");
+        }
+
+        const ids = Array.isArray(data) ? data.map((c) => String(c._id)) : [];
+        setLikedIds(ids);
+      } catch (err) {
+        console.error("fetchLiked (recommend) error:", err);
+      } finally {
+        setLoadingLikes(false);
+      }
+    };
+
+    fetchLiked();
+  }, [isLoggedIn, token]);
+
   const filteredCourses =
     selectedRegionId === "all"
       ? courses
@@ -92,7 +143,7 @@ function RecommendPage() {
 
         try {
           const keyword = buildUnsplashKeyword(course);
-          const url = await fetchUnsplashImage(keyword);
+          const url = await fetchUnsplashImage(keyword, course._id);
           if (url) {
             updates[course._id] = url;
           }
@@ -129,7 +180,7 @@ function RecommendPage() {
             ...course,
             city: course.regionId, // regionId를 city로 매핑
           });
-          const url = await fetchUnsplashImage(keyword);
+          const url = await fetchUnsplashImage(keyword, course.id);
           if (url) {
             updates[course.id] = url;
           }
@@ -150,6 +201,54 @@ function RecommendPage() {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoCourses]); // autoCardImages는 일부러 deps에서 제외
+
+  // 💜 리스트에서 바로 찜 토글
+  const handleToggleLike = async (courseId) => {
+    if (!isLoggedIn) {
+      alert("로그인 후 찜할 수 있어요.");
+      return;
+    }
+
+    try {
+      const res = await fetch(
+        `${API_BASE_URL}/api/courses/${courseId}/like`,
+        {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || "찜 처리 실패");
+
+      const idStr = String(courseId);
+
+      if (data.liked) {
+        // 새로 찜
+        setLikedIds((prev) =>
+          prev.includes(idStr) ? prev : [...prev, idStr]
+        );
+      } else {
+        // 찜 해제
+        setLikedIds((prev) => prev.filter((cid) => cid !== idStr));
+      }
+
+      // 로컬 likesCount도 같이 업데이트 (있을 때만)
+      setCourses((prev) =>
+        prev.map((c) => {
+          if (String(c._id) !== idStr) return c;
+          const prevLikes =
+            c.likesCount ?? c.likeCount ?? c.likes ?? 0;
+          const diff = data.liked ? 1 : -1;
+          const next = Math.max(0, prevLikes + diff);
+          return { ...c, likesCount: next };
+        })
+      );
+    } catch (err) {
+      console.error("toggle like error (recommend):", err);
+      alert(err.message || "찜 처리 중 오류가 발생했어요.");
+    }
+  };
 
   // -------------------- 2. 카카오 장소 리스트 (핫플) --------------------
   const [kakaoPlaces, setKakaoPlaces] = useState([]);
@@ -302,7 +401,6 @@ function RecommendPage() {
   }
 
   // -------------------- 4. 자동 코스 여러 개 쌓기 --------------------
-
   const fetchAutoCourse = async (regionId) => {
     try {
       const region = SEOUL_REGIONS.find((r) => r.id === regionId);
@@ -453,47 +551,65 @@ function RecommendPage() {
             <p style={{ color: "red", marginBottom: 8 }}>{coursesError}</p>
           )}
 
-          {loadingCourses ? (
+          {(loadingCourses || loadingLikes) && (
             <p className="text-muted">코스를 불러오는 중...</p>
-          ) : filteredCourses.length === 0 ? (
-            <p style={{ fontSize: 14, color: "#6b7280" }}>
-              {selectedRegionId === "all"
-                ? "아직 등록된 코스가 없어요. 코스 등록 페이지에서 첫 코스를 만들어볼까요?"
-                : "이 지역에 등록된 코스가 아직 없어요."}
-            </p>
-          ) : (
-            <ul className="course-list">
-              {filteredCourses.map((course) => {
-                const regionLabel = getRegionLabel(course.city);
-                const hasSteps =
-                  Array.isArray(course.steps) && course.steps.length > 0;
-                const firstStep = hasSteps ? course.steps[0] : null;
+          )}
 
-                const likes =
-                  course.likesCount ??
-                  course.likeCount ??
-                  course.likes ??
-                  undefined;
+          {!loadingCourses && !loadingLikes && (
+            <>
+              {filteredCourses.length === 0 ? (
+                <p style={{ fontSize: 14, color: "#6b7280" }}>
+                  {selectedRegionId === "all"
+                    ? "아직 등록된 코스가 없어요. 코스 등록 페이지에서 첫 코스를 만들어볼까요?"
+                    : "이 지역에 등록된 코스가 아직 없어요."}
+                </p>
+              ) : (
+                <ul className="course-list">
+                  {filteredCourses.map((course) => {
+                    const regionLabel = getRegionLabel(course.city);
+                    const hasSteps =
+                      Array.isArray(course.steps) &&
+                      course.steps.length > 0;
+                    const firstStep = hasSteps ? course.steps[0] : null;
 
-                return (
-                  <CourseCard
-                    key={course._id}
-                    to={`/courses/${course._id}`}
-                    imageUrl={cardImages[course._id] || null}
-                    mood={course.mood}
-                    title={course.title}
-                    regionLabel={regionLabel}
-                    stepsCount={hasSteps ? course.steps.length : 0}
-                    likesCount={likes}
-                    firstStep={
-                      firstStep?.place ||
-                      firstStep?.title ||
-                      firstStep?.name
-                    }
-                  />
-                );
-              })}
-            </ul>
+                    const likes =
+                      course.likesCount ??
+                      course.likeCount ??
+                      course.likes ??
+                      undefined;
+
+                    const isLiked = likedIds.includes(
+                      String(course._id)
+                    );
+                    const manualImageUrl =
+                    course.heroImageUrl || // 내가 제안했던 필드 이름
+                    course.imageUrl ||     // 혹시 다른 이름으로 써놨을 때 대비
+                    course.thumbnailUrl || // (선택) 이전에 쓰던 필드 있을까봐
+                    null;
+
+                    return (
+                      <CourseCard
+                        key={course._id}
+                        to={`/courses/${course._id}`}
+                        imageUrl={manualImageUrl || cardImages[course._id] || null}
+                        mood={course.mood}
+                        title={course.title}
+                        regionLabel={regionLabel}
+                        stepsCount={hasSteps ? course.steps.length : 0}
+                        likesCount={likes}
+                        firstStep={
+                          firstStep?.place ||
+                          firstStep?.title ||
+                          firstStep?.name
+                        }
+                        isLiked={isLiked}
+                        onToggleLike={() => handleToggleLike(course._id)}
+                      />
+                    );
+                  })}
+                </ul>
+              )}
+            </>
           )}
         </section>
       )}

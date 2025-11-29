@@ -9,6 +9,9 @@ const StepSchema = new mongoose.Schema({
   time: { type: String, default: "" },          // 예: "14:00"
   budget: { type: Number, default: 0 },         // 예산
 
+  mood: { type: String },
+  heroImageUrl: { type: String }, // 사용자가 직접 넣은 대표 이미지
+
   // 🔍 카카오에서 온 자동 코스일 때 추가로 저장해두면 좋은 정보들 (선택 사항)
   address: { type: String, default: "" },       // 도로명/지번 주소
   kakaoPlaceId: { type: String, default: "" },  // 카카오 place id
@@ -22,6 +25,9 @@ const CourseSchema = new mongoose.Schema(
     title: { type: String, required: true },     // 전체 코스 이름
     city: { type: String, required: true },      // 지역 (예: gangnam, hongdae 등 region id)
     mood: { type: String, required: true },      // 분위기: 감성, 힙한, 조용한 등
+    imageUrl: {
+      type: String, // '/uploads/xxx.jpg' 같은 경로
+    },
 
     // ⭐ 핵심: 단계별 코스
     steps: {
@@ -36,6 +42,7 @@ const CourseSchema = new mongoose.Schema(
       ref: "User",
       required: false,
     },
+
 
     // 사람이 직접 만든 코스인지 / 자동 생성 코스인지 구분
     sourceType: {
