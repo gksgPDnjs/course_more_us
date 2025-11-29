@@ -7,6 +7,17 @@ import { buildUnsplashKeyword } from "./api/unsplashKeyword";
 import { fetchUnsplashImage } from "./api/unsplash";
 
 const API_BASE_URL = "http://localhost:4000";
+/** 이미지 경로를 완전한 URL로 변환 */
+function resolveImageUrl(raw) {
+  if (!raw) return null;
+  // 이미 http로 시작하면 그대로 사용 (Unsplash, 향후 서버 도메인 포함 값)
+  if (/^https?:\/\//.test(raw)) return raw;
+  // "/uploads/xxxxx.jpg" 형태면 백엔드 주소를 붙여줌
+  if (raw.startsWith("/uploads/")) {
+    return `${API_BASE_URL}${raw}`;
+  }
+  return raw; // 그 외는 일단 그대로
+}
 
 /* ---------------- 공통 유틸 / 간단 auth 훅 ---------------- */
 
@@ -139,7 +150,10 @@ function RecommendPage() {
 
       for (const course of targets) {
         // 이미 이미지가 있으면 다시 안 불러옴
-        if (cardImages[course._id]) continue;
+        if (course.heroImageUrl || course.imageUrl || course.thumbnailUrl) {
+        continue;
+      }
+
 
         try {
           const keyword = buildUnsplashKeyword(course);
@@ -173,8 +187,7 @@ function RecommendPage() {
       for (const course of targets) {
         if (!course.id) continue;
         // 이미 이미지가 있으면 다시 안 불러옴
-        if (autoCardImages[course.id]) continue;
-
+         if (cardImages[String(course._id)]) continue;
         try {
           const keyword = buildUnsplashKeyword({
             ...course,
@@ -581,17 +594,19 @@ function RecommendPage() {
                     const isLiked = likedIds.includes(
                       String(course._id)
                     );
-                    const manualImageUrl =
-                    course.heroImageUrl || // 내가 제안했던 필드 이름
-                    course.imageUrl ||     // 혹시 다른 이름으로 써놨을 때 대비
-                    course.thumbnailUrl || // (선택) 이전에 쓰던 필드 있을까봐
-                    null;
+                    const manualImageUrl = resolveImageUrl(
+                    course.heroImageUrl ||
+                      course.imageUrl ||
+                      course.thumbnailUrl ||
+                      null
+                  );
+                  const finalImgUrl = manualImageUrl || cardImages[course._id] || null;
 
                     return (
                       <CourseCard
                         key={course._id}
-                        to={`/courses/${course._id}`}
-                        imageUrl={manualImageUrl || cardImages[course._id] || null}
+                        to={`/courses/${course._id}`} 
+                        imageUrl={finalImgUrl}
                         mood={course.mood}
                         title={course.title}
                         regionLabel={regionLabel}

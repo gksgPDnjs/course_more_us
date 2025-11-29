@@ -8,6 +8,14 @@ import { fetchUnsplashImage } from "../api/unsplash";
 
 const API_BASE_URL = "http://localhost:4000";
 
+function resolveImageUrl(raw) {
+  if (!raw) return null;
+  if (/^https?:\/\//.test(raw)) return raw;
+  if (raw.startsWith("/uploads/")) {
+    return `${API_BASE_URL}${raw}`;
+  }
+  return raw;
+}
 /** city id → label */
 function getRegionLabel(cityId) {
   if (!cityId) return "";
@@ -227,60 +235,62 @@ function MyPage() {
   };
 
   // ---------------------- 공통 렌더링 함수 ----------------------
-  const renderCourseList = (courses, emptyText) => {
-    if (loading) return <p>불러오는 중...</p>;
-    if (error) return <p style={{ color: "red" }}>{error}</p>;
-    if (!courses.length)
-      return <p className="text-muted">{emptyText}</p>;
+  // ---------------------- 공통 렌더링 함수 ----------------------
+const renderCourseList = (courses, emptyText) => {
+  if (loading) return <p>불러오는 중...</p>;
+  if (error) return <p style={{ color: "red" }}>{error}</p>;
+  if (!courses.length) return <p className="text-muted">{emptyText}</p>;
 
-    return (
-      <ul className="course-list">
-        {courses.map((course) => {
-          const hasSteps =
-            Array.isArray(course.steps) && course.steps.length > 0;
-          const firstStep = hasSteps ? course.steps[0] : null;
+  return (
+    <ul className="course-list">
+      {courses.map((course) => {
+        const hasSteps =
+          Array.isArray(course.steps) && course.steps.length > 0;
+        const firstStep = hasSteps ? course.steps[0] : null;
 
-          const regionLabel = getRegionLabel(course.city);
-          const stepsCount = hasSteps ? course.steps.length : 0;
-          const firstStepName = firstStep?.place || firstStep?.title || "";
+        const regionLabel = getRegionLabel(course.city);
+        const stepsCount = hasSteps ? course.steps.length : 0;
+        const firstStepName = firstStep?.place || firstStep?.title || "";
 
-          const likesCount =
-            course.likesCount ?? course.likeCount ?? course.likes ?? undefined;
+        const likesCount =
+          course.likesCount ?? course.likeCount ?? course.likes ?? undefined;
 
-          const isLiked = likedIds.includes(String(course._id));
+        const isLiked = likedIds.includes(String(course._id));
 
-          // 1️⃣ 내가 올린 이미지 우선
-          const manualImageUrl =
-            course.heroImageUrl ||
-            course.imageUrl ||
-            course.thumbnailUrl ||
-            null;
+        // 1️⃣ 내가 올린 이미지(또는 수동 URL) 최우선
+        const manualImageUrl =
+          resolveImageUrl(
+              course.heroImageUrl ||
+                course.imageUrl ||
+                course.thumbnailUrl ||
+                null
+           );
 
-          // 2️⃣ 없으면 Unsplash 썸네일 사용
-          const imgUrl =
-            manualImageUrl ||
+        // 2️⃣ 없으면 Unsplash 썸네일
+        const imgUrl =
+          manualImageUrl ||
             cardImages[String(course._id)] ||
             null;
 
-          return (
-            <CourseCard
-              key={course._id}
-              to={`/courses/${course._id}`}
-              imageUrl={imgUrl}
-              mood={course.mood}
-              title={course.title}
-              regionLabel={regionLabel}
-              stepsCount={stepsCount}
-              likesCount={likesCount}
-              firstStep={firstStepName}
-              isLiked={isLiked}
-              onToggleLike={() => handleToggleLike(course._id)}
-            />
-          );
-        })}
-      </ul>
-    );
-  };
+        return (
+          <CourseCard
+            key={course._id}
+            to={`/courses/${course._id}`}
+            imageUrl={imgUrl}
+            mood={course.mood}
+            title={course.title}
+            regionLabel={regionLabel}
+            stepsCount={stepsCount}
+            likesCount={likesCount}
+            firstStep={firstStepName}
+            isLiked={isLiked}
+            onToggleLike={() => handleToggleLike(course._id)}
+          />
+        );
+      })}
+    </ul>
+  );
+};
 
   // ---------------------- 로그인 안 한 경우 ----------------------
   if (!isLoggedIn) {

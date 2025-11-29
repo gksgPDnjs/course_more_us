@@ -1,15 +1,14 @@
-// index.js
+// backend/index.js
 import mongoose from "mongoose";
 import express from "express";
 import dotenv from "dotenv";
 import cors from "cors";
-import Course from "./models/Course.js";
+
 import courseRoutes from "./routes/courseRoutes.js";
 import authRoutes from "./routes/authRoutes.js";
 import recommendRoutes from "./routes/recommendRoutes.js";
 import randomRoutes from "./routes/randomRoutes.js";
 import kakaoRoutes from "./routes/kakaoRoutes.js";
-import path from "path";
 import uploadRoutes from "./routes/uploadRoutes.js";
 
 dotenv.config();
@@ -23,26 +22,31 @@ if (!MONGODB_URI) {
 mongoose
   .connect(MONGODB_URI)
   .then(() => console.log("✅ MongoDB connected"))
-  .catch(err => console.error("❌ MongoDB connection error:", err));
+  .catch((err) => console.error("❌ MongoDB connection error:", err));
 
 const app = express();
+
+// 기본 미들웨어
 app.use(cors());
 app.use(express.json());
+
+// 업로드된 파일 정적 제공 (http://localhost:4000/uploads/파일명)
+app.use("/uploads", express.static("uploads"));
+
+// API 라우트들
 app.use("/api/courses", courseRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/recommend", recommendRoutes);
 app.use("/api/random", randomRoutes);
 app.use("/api/kakao", kakaoRoutes);
-app.use("/uploads", express.static("uploads"));
 app.use("/api/upload", uploadRoutes);
 
-// 테스트용 기본 라우트
+// 테스트용 루트
 app.get("/", (req, res) => {
   res.send("Course-more-us API is running!");
 });
 
-// 서버 실행
-
+// 서버 시작
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);

@@ -7,6 +7,13 @@ import { buildUnsplashKeyword } from "./api/unsplashKeyword";
 
 const API_BASE_URL = "http://localhost:4000";
 
+/** 업로드 이미지 / 일반 URL을 모두 처리하는 헬퍼 */
+function resolveImageUrl(url) {
+  if (!url) return null;
+  if (url.startsWith("http")) return url; // 이미 완전한 주소면 그대로
+  return `${API_BASE_URL}${url}`;         // /uploads/xxx → http://localhost:4000/uploads/xxx
+}
+
 // city(지역 id) -> 라벨 변환
 function getRegionLabel(cityId) {
   if (!cityId) return "";
@@ -72,7 +79,7 @@ function CourseDetail() {
   const isOwner =
     !!currentUserId && course && String(currentUserId) === String(course.owner);
 
-  // 🎨 대표 이미지 (Unsplash)
+  // 🎨 대표 이미지 (업로드 or Unsplash)
   const [heroUrl, setHeroUrl] = useState(null);
   const [heroLoading, setHeroLoading] = useState(false);
 
@@ -230,23 +237,56 @@ function CourseDetail() {
   }, [id]);
 
   /* --------------------------------------
-     🔥 Unsplash용 검색어 + 대표 이미지 로딩
+     🔥 대표 이미지 로딩
+     1) 내가 업로드한 heroImageUrl / imageUrl / thumbnailUrl 우선
+     2) 없으면 Unsplash에서 대체 이미지
   -------------------------------------- */
   useEffect(() => {
     if (!course) return;
 
+    // 1️⃣ 수동 이미지 먼저 확인
+    const manualRaw =
+      course.heroImageUrl ||
+      course.imageUrl ||
+      course.thumbnailUrl ||
+      "";
+
+    const manualResolved = resolveImageUrl(manualRaw);
+
+    if (manualResolved) {
+      setHeroUrl(manualResolved);
+      setHeroLoading(false);
+      return; // 업로드 이미지 있으면 Unsplash는 안 감
+    }
+
+    // 2️⃣ 수동 이미지가 없을 때만 Unsplash 호출
     const keyword = buildUnsplashKeyword(course);
     console.log("🧩 CourseDetail에서 만든 Unsplash keyword:", keyword);
 
+    let cancelled = false;
+
     async function loadHero() {
-      setHeroLoading(true);
-      const url = await fetchUnsplashHero(keyword);
-      console.log("🎨 CourseDetail에서 받은 heroUrl:", url);
-      setHeroUrl(url);
-      setHeroLoading(false);
+      try {
+        setHeroLoading(true);
+        const url = await fetchUnsplashHero(keyword);
+        if (!cancelled) {
+          console.log("🎨 CourseDetail에서 받은 heroUrl:", url);
+          setHeroUrl(url);
+        }
+      } catch (e) {
+        if (!cancelled) {
+          console.warn("CourseDetail Unsplash 실패:", e);
+        }
+      } finally {
+        if (!cancelled) setHeroLoading(false);
+      }
     }
 
     loadHero();
+
+    return () => {
+      cancelled = true;
+    };
   }, [course]);
 
   // 로딩 중
@@ -337,7 +377,7 @@ function CourseDetail() {
         </Link>
       </div>
 
-      {/* ⭐ 대표 이미지 (Unsplash) */}
+      {/* ⭐ 대표 이미지 */}
       <div
         style={{
           marginBottom: 20,

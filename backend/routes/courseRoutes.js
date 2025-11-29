@@ -12,7 +12,8 @@ const router = express.Router();
  */
 router.post("/", authMiddleware, async (req, res) => {
   try {
-    const { title, city, mood, steps } = req.body;
+    // 프론트에서 보낸 heroImageUrl 포함해서 구조분해
+    const { title, city, mood, heroImageUrl, steps } = req.body;
 
     if (!title || !city) {
       return res
@@ -35,7 +36,8 @@ router.post("/", authMiddleware, async (req, res) => {
     const course = await Course.create({
       title,
       city,
-      mood,
+      mood: mood || "",
+      heroImageUrl: heroImageUrl || "",
       steps,
       owner: req.user.userId,
       approved: false,
@@ -114,9 +116,6 @@ router.get("/recent/me", authMiddleware, async (req, res) => {
 
 /**
  * 🔥 자동 생성 코스 저장: POST /api/courses/auto
- * - 추천 페이지에서 카카오 기반으로 만든 코스를 저장
- * - 로그인 필요 (authMiddleware)
- * - 저장된 코스는 sourceType: "auto" 로 구분됨
  */
 router.post("/auto", authMiddleware, async (req, res) => {
   try {
@@ -128,9 +127,9 @@ router.post("/auto", authMiddleware, async (req, res) => {
         .json({ message: "title, city, steps 는 필수입니다." });
     }
 
-    // 프론트에서 오는 step 구조를 안전하게 매핑
+    // 카카오 자동 생성 코스 steps 매핑
     const mappedSteps = steps.map((step) => {
-      const placeObj = step.place || step; // { place_name, road_address_name, ... } 또는 그냥 문자열
+      const placeObj = step.place || step;
 
       const placeName =
         placeObj.place_name ||
@@ -145,9 +144,6 @@ router.post("/auto", authMiddleware, async (req, res) => {
         placeObj.address ||
         "";
 
-      const kakaoPlaceId = placeObj.id || "";
-      const kakaoUrl = placeObj.place_url || "";
-
       return {
         title: step.title || step.label || step.type || "코스",
         place: placeName,
@@ -155,8 +151,8 @@ router.post("/auto", authMiddleware, async (req, res) => {
         time: step.time || "",
         budget: step.budget ?? 0,
         address,
-        kakaoPlaceId,
-        kakaoUrl,
+        kakaoPlaceId: placeObj.id || "",
+        kakaoUrl: placeObj.place_url || "",
       };
     });
 
@@ -165,10 +161,10 @@ router.post("/auto", authMiddleware, async (req, res) => {
       city,
       mood: mood || "자동 생성",
       steps: mappedSteps,
-      owner: req.user.userId,          // 이 자동 코스를 만든(뽑은) 사용자
-      sourceType: "auto",              // 자동 생성 코스 표시
-      generatedFrom: `kakao:${city}`,  // 어디서 생성됐는지 기록용
-      approved: true,                  // 자동 코스는 바로 사용 가능하게 true
+      owner: req.user.userId,
+      sourceType: "auto",
+      generatedFrom: `kakao:${city}`,
+      approved: true,
     });
 
     const saved = await course.save();
@@ -199,8 +195,6 @@ router.get("/:id", async (req, res) => {
 
 /**
  * ❤️ 찜 토글: POST /api/courses/:id/like
- *  - 이미 찜했으면 취소, 아니면 찜
- *  - 결과: { liked: true/false }
  */
 router.post("/:id/like", authMiddleware, async (req, res) => {
   try {
@@ -217,11 +211,9 @@ router.post("/:id/like", authMiddleware, async (req, res) => {
 
     let liked;
     if (idx === -1) {
-      // 찜 추가
       user.likedCourses.push(courseId);
       liked = true;
     } else {
-      // 찜 취소
       user.likedCourses.splice(idx, 1);
       liked = false;
     }
@@ -236,36 +228,32 @@ router.post("/:id/like", authMiddleware, async (req, res) => {
 
 /**
  * 👀 최근 본 코스 기록: POST /api/courses/:id/view
- *  - user.recentCourses 배열의 맨 앞에 추가
- *  - 중복은 제거하고, 최대 10개까지만 유지
  */
 router.post("/:id/view", authMiddleware, async (req, res) => {
   try {
     const userId = req.user.userId;
     const courseId = req.params.id;
 
-    // recentCourses에서 기존 항목 삭제 후 맨 앞 추가
-    // 최대 10개 유지
+    // 중복 제거
     await User.updateOne(
       { _id: userId },
-      {
-        $pull: { recentCourses: courseId }, // 기존 중복 제거
-      }
+      { $pull: { recentCourses: courseId } }
     );
 
+    // 맨 앞에 추가
     await User.updateOne(
       { _id: userId },
       {
         $push: {
           recentCourses: {
             $each: [courseId],
-            $position: 0, // 맨 앞에 삽입
+            $position: 0,
           },
         },
       }
     );
 
-    // 최대 10개 초과 시 뒤에서 제거
+    // 최대 10개 유지
     await User.updateOne(
       { _id: userId },
       [
@@ -296,7 +284,6 @@ router.delete("/:id", authMiddleware, async (req, res) => {
       return res.status(404).json({ message: "코스를 찾을 수 없습니다." });
     }
 
-    // owner만 삭제 가능
     if (String(course.owner) !== req.user.userId) {
       return res.status(403).json({ message: "삭제 권한이 없습니다." });
     }
@@ -311,7 +298,6 @@ router.delete("/:id", authMiddleware, async (req, res) => {
 
 /**
  * 코스 수정: PUT /api/courses/:id
- *  (지금은 예전 필드 위주이지만, 서버 도는 데 문제 없음)
  */
 router.put("/:id", authMiddleware, async (req, res) => {
   try {
@@ -322,7 +308,6 @@ router.put("/:id", authMiddleware, async (req, res) => {
       return res.status(404).json({ message: "코스를 찾을 수 없습니다." });
     }
 
-    // owner만 수정 가능
     if (String(course.owner) !== req.user.userId) {
       return res.status(403).json({ message: "수정 권한이 없습니다." });
     }

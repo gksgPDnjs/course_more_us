@@ -7,23 +7,18 @@ import {
   Outlet,
   useNavigate,
 } from "react-router-dom";
+
 import CourseDetail from "./CourseDetail.jsx";
 import LoginPage from "./LoginPage.jsx";
 import RecommendPage from "./RecommendPage.jsx";
 import RandomPage from "./RandomPage.jsx";
 import { SEOUL_REGIONS } from "./data/regions";
 import "./App.css";
-import AutoCourseDetail from "./AutoCourseDetail";
-import HomePage from "./HomePage";
+import AutoCourseDetail from "./AutoCourseDetail.jsx";
+import HomePage from "./HomePage.jsx";
 import MyPage from "./pages/Mypage.jsx";
 
 const API_BASE_URL = "http://localhost:4000";
-
-function getRegionLabel(cityId) {
-  if (!cityId) return "";
-  const region = SEOUL_REGIONS.find((r) => r.id === cityId);
-  return region ? region.label : cityId;
-}
 
 // 🔐 공통 로그인 훅
 function useAuth() {
@@ -33,6 +28,13 @@ function useAuth() {
   const currentUserId = currentUser && (currentUser.id || currentUser._id);
   const isLoggedIn = !!token && !!currentUser;
   return { currentUser, token, currentUserId, isLoggedIn };
+}
+
+// (기존에 쓰던 getRegionLabel – 필요하면 그대로 사용)
+function getRegionLabel(cityId) {
+  if (!cityId) return "";
+  const region = SEOUL_REGIONS.find((r) => r.id === cityId);
+  return region ? region.label : cityId;
 }
 
 /* ===================== 공통 레이아웃 ===================== */
@@ -109,7 +111,8 @@ function Layout() {
   );
 }
 
-/* ===================== 코스 목록 (기존 리스트 – 필요 시 사용) ===================== */
+/* ===================== (필요시) 코스 리스트 페이지 ===================== */
+/* 지금은 실제 라우트에서 안 쓰고 있으니까, 필요 없으면 삭제해도 돼 */
 function CourseListPage() {
   const { currentUserId, token, isLoggedIn } = useAuth();
 
@@ -367,9 +370,10 @@ function NewCoursePage() {
   const [title, setTitle] = useState("");
   const [cityId, setCityId] = useState(SEOUL_REGIONS[0].id);
 
-  // 새로 추가된 필드들
+  // 새 필드
   const [mood, setMood] = useState("");
-  const [heroImageUrl, setHeroImageUrl] = useState(""); // 대표 이미지 URL (선택)
+  const [heroImageFile, setHeroImageFile] = useState(null); // 파일 업로드용
+  const [heroImageUrl, setHeroImageUrl] = useState("");     // 직접 URL 입력용
 
   const [steps, setSteps] = useState([
     { title: "1단계", place: "", memo: "", time: "", budget: "" },
@@ -381,26 +385,25 @@ function NewCoursePage() {
 
   const handleStepChange = (index, field, value) => {
     setSteps((prev) =>
-      prev.map((step, i) =>
-        i === index ? { ...step, [field]: value } : step
-      )
+      prev.map((s, i) => (i === index ? { ...s, [field]: value } : s))
     );
   };
 
   const addStep = () => {
     if (steps.length >= 4) return;
-    const nextIndex = steps.length + 1;
+    const next = steps.length + 1;
     setSteps((prev) => [
       ...prev,
-      { title: `${nextIndex}단계`, place: "", memo: "", time: "", budget: "" },
+      { title: `${next}단계`, place: "", memo: "", time: "", budget: "" },
     ]);
   };
 
-  const removeStep = (index) => {
+  const removeStep = (idx) => {
     if (steps.length <= 1) return;
-    setSteps((prev) => prev.filter((_, i) => i !== index));
+    setSteps((prev) => prev.filter((_, i) => i !== idx));
   };
 
+  /* ===================== 제출 ===================== */
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
@@ -410,69 +413,86 @@ function NewCoursePage() {
       return;
     }
 
-    if (!title.trim() || !cityId) {
-      setError("제목과 도시를 모두 입력해 주세요.");
+    if (!title.trim()) {
+      setError("제목을 입력해 주세요.");
       return;
     }
 
     const cleanedSteps = steps
-      .map((s) => ({
-        ...s,
-        budget: s.budget ? Number(s.budget) : 0,
-      }))
-      .filter((s) => s.place.trim() !== "");
+      .map((s) => ({ ...s, budget: s.budget ? Number(s.budget) : 0 }))
+      .filter((s) => s.place.trim());
 
     if (cleanedSteps.length === 0) {
-      setError("최소 1개 이상의 단계에 장소를 입력해 주세요.");
-      return;
-    }
-    if (cleanedSteps.length > 4) {
-      setError("코스는 최대 4단계까지만 등록할 수 있어요.");
+      setError("최소 1개의 장소는 입력해야 합니다.");
       return;
     }
 
+    setLoading(true);
+
+    /* ---------- 1) 이미지 파일 업로드 ---------- */
+    let finalImageUrl = heroImageUrl.trim() || null; // URL이 있으면 그걸 우선
+
+    if (!finalImageUrl && heroImageFile) {
+      try {
+        const formData = new FormData();
+        formData.append("image", heroImageFile);
+
+        const uploadRes = await fetch(
+          `${API_BASE_URL}/api/upload/image`,
+          {
+            method: "POST",
+            body: formData,
+          }
+        );
+
+        const uploadData = await uploadRes.json().catch(() => ({}));
+        if (uploadRes.ok && uploadData.url) {
+          finalImageUrl = uploadData.url; // 예: "/uploads/xxxx.jpg"
+        } else {
+          console.error("이미지 업로드 실패:", uploadData);
+        }
+      } catch (err) {
+        console.error("이미지 업로드 오류:", err);
+      }
+    }
+
+    /* ---------- 2) 코스 데이터 저장 ---------- */
     try {
-      setLoading(true);
-
-      const body = {
-        title,
-        city: cityId,
-        mood: mood || undefined, // 선택 안 했으면 굳이 안 보냄
-        heroImageUrl: heroImageUrl.trim() || undefined, // 비어있으면 undefined
-        steps: cleanedSteps,
-      };
-
       const res = await fetch(`${API_BASE_URL}/api/courses`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify(body),
+        body: JSON.stringify({
+          title,
+          city: cityId,
+          mood: mood || undefined,
+          heroImageUrl: finalImageUrl || undefined,
+          steps: cleanedSteps,
+        }),
       });
 
       const data = await res.json().catch(() => ({}));
 
-      if (!res.ok) {
-        throw new Error(data.message || "코스 등록 실패");
-      }
+      if (!res.ok) throw new Error(data.message || "코스 등록 실패");
 
       alert("코스가 등록되었습니다!");
+      navigate("/");
 
       // 폼 초기화
       setTitle("");
       setCityId(SEOUL_REGIONS[0].id);
       setMood("");
+      setHeroImageFile(null);
       setHeroImageUrl("");
       setSteps([
         { title: "1단계", place: "", memo: "", time: "", budget: "" },
         { title: "2단계", place: "", memo: "", time: "", budget: "" },
       ]);
-
-      navigate("/");
     } catch (err) {
       console.error(err);
-      setError(err.message || "코스를 등록하는 데 실패했어요.");
+      setError(err.message || "코스 등록 실패");
     } finally {
       setLoading(false);
     }
@@ -486,29 +506,27 @@ function NewCoursePage() {
 
       <form className="course-form" onSubmit={handleSubmit}>
         {/* 제목 */}
-        <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-          <input
-            className="input"
-            name="title"
-            placeholder="코스 제목 (예: 홍대 감성 데이트)"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            required
-            disabled={!isLoggedIn}
-          />
-        </div>
+        <input
+          className="input"
+          placeholder="코스 제목 (예: 홍대 감성 데이트)"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          disabled={!isLoggedIn}
+          required
+          style={{ marginBottom: 12 }}
+        />
 
-        {/* 지역 + 분위기 선택 */}
-        <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+        {/* 지역 + 분위기 */}
+        <div style={{ display: "flex", gap: 8 }}>
           <select
             className="input"
             value={cityId}
             onChange={(e) => setCityId(e.target.value)}
             disabled={!isLoggedIn}
           >
-            {SEOUL_REGIONS.map((region) => (
-              <option key={region.id} value={region.id}>
-                {region.label}
+            {SEOUL_REGIONS.map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.label}
               </option>
             ))}
           </select>
@@ -527,31 +545,53 @@ function NewCoursePage() {
           </select>
         </div>
 
-        {/* 대표 이미지 URL 입력 (선택) */}
-        <div style={{ marginBottom: 12 }}>
+        {/* 파일 업로드 */}
+        <div style={{ marginTop: 12 }}>
+          <label style={{ fontSize: 13, fontWeight: 600 }}>
+            대표 이미지 업로드 (선택)
+          </label>
+          <input
+            type="file"
+            accept="image/*"
+            onChange={(e) => setHeroImageFile(e.target.files?.[0] || null)}
+            disabled={!isLoggedIn}
+            style={{ marginTop: 6 }}
+          />
+          <p style={{ fontSize: 12, color: "#777" }}>
+            파일을 선택하면 저장할 때 자동으로 업로드돼요.
+          </p>
+        </div>
+
+        {/* URL 직접 입력 */}
+        <div style={{ marginTop: 8 }}>
           <input
             className="input"
-            placeholder="대표 이미지 URL (선택, 직접 찍은 사진 주소를 붙여넣기)"
+            placeholder="또는 이미지 URL 직접 입력 (선택)"
             value={heroImageUrl}
             onChange={(e) => setHeroImageUrl(e.target.value)}
             disabled={!isLoggedIn}
           />
           <p style={{ fontSize: 12, color: "#6b7280", marginTop: 4 }}>
-            * 이미지 주소를 입력하면 코스 카드에서 우선 사용돼요. 비워두면
-            자동으로 코스 분위기에 맞는 사진을 불러와요.
+            * URL을 입력하면 파일보다 이 주소가 우선으로 사용돼요.
           </p>
         </div>
 
-        <div style={{ marginBottom: 8 }}>
-          <p style={{ fontSize: 13, color: "#666" }}>
-            데이트 코스를 2–4단계로 나눠서 작성해 주세요. (최대 4단계)
-          </p>
+        {/* 단계 안내 */}
+        <div
+          style={{
+            marginTop: 16,
+            marginBottom: 8,
+            fontSize: 13,
+            color: "#666",
+          }}
+        >
+          데이트 코스를 2–4단계로 작성해 주세요. (최대 4단계)
         </div>
 
         {/* 단계들 */}
-        {steps.map((step, index) => (
+        {steps.map((step, i) => (
           <div
-            key={index}
+            key={i}
             className="card"
             style={{ padding: 12, marginBottom: 8 }}
           >
@@ -568,7 +608,7 @@ function NewCoursePage() {
                 <button
                   type="button"
                   className="btn btn-secondary btn-sm"
-                  onClick={() => removeStep(index)}
+                  onClick={() => removeStep(i)}
                 >
                   단계 삭제
                 </button>
@@ -580,10 +620,9 @@ function NewCoursePage() {
               placeholder="장소 이름 (예: ○○카페)"
               value={step.place}
               onChange={(e) =>
-                handleStepChange(index, "place", e.target.value)
+                handleStepChange(i, "place", e.target.value)
               }
-              disabled={!isLoggedIn}
-              required={index === 0}
+              required={i === 0}
             />
 
             <input
@@ -591,9 +630,8 @@ function NewCoursePage() {
               placeholder="시간 (예: 14:00)"
               value={step.time}
               onChange={(e) =>
-                handleStepChange(index, "time", e.target.value)
+                handleStepChange(i, "time", e.target.value)
               }
-              disabled={!isLoggedIn}
               style={{ marginTop: 6 }}
             />
 
@@ -602,9 +640,8 @@ function NewCoursePage() {
               placeholder="예산 (원, 선택)"
               value={step.budget}
               onChange={(e) =>
-                handleStepChange(index, "budget", e.target.value)
+                handleStepChange(i, "budget", e.target.value)
               }
-              disabled={!isLoggedIn}
               style={{ marginTop: 6 }}
             />
 
@@ -613,10 +650,9 @@ function NewCoursePage() {
               placeholder="메모 (이 코스에 대한 간단한 설명)"
               value={step.memo}
               onChange={(e) =>
-                handleStepChange(index, "memo", e.target.value)
+                handleStepChange(i, "memo", e.target.value)
               }
               rows={2}
-              disabled={!isLoggedIn}
               style={{ marginTop: 6 }}
             />
           </div>
@@ -626,7 +662,7 @@ function NewCoursePage() {
           type="button"
           className="btn btn-secondary"
           onClick={addStep}
-          disabled={!isLoggedIn || steps.length >= 4}
+          disabled={steps.length >= 4 || !isLoggedIn}
           style={{ marginTop: 4, marginBottom: 12 }}
         >
           {steps.length >= 4
