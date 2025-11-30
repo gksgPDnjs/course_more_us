@@ -55,7 +55,14 @@ function Layout() {
         <div className="app-inner">
           <div className="header-top">
             <div>
-              <h1 className="app-title">Course More Us</h1>
+              <h1 className="app-title">
+                <Link
+                  to="/"
+                  style={{
+                    textDecoration: "none",
+                    color: "inherit",
+                  }}
+                >Course More Us</Link></h1>
               <p className="app-subtitle">나만의 데이트 / 코스 기록하기 📝</p>
             </div>
 
