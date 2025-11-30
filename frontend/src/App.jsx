@@ -17,6 +17,7 @@ import "./App.css";
 import AutoCourseDetail from "./AutoCourseDetail.jsx";
 import HomePage from "./HomePage.jsx";
 import MyPage from "./pages/Mypage.jsx";
+import AdminCoursesPage from "./AdminCoursesPage";
 
 const API_BASE_URL = "http://localhost:4000";
 
@@ -710,7 +711,10 @@ function App() {
         {/* 추천 / 랜덤 */}
         <Route path="recommend" element={<RecommendPage />} />
         <Route path="random" element={<RandomPage />} />
+         {/* 🔥 관리자 페이지 */}
+        <Route path="/admin/courses" element={<AdminCoursesPage />} />
       </Route>
+
 
       {/* 로그인은 레이아웃 없이 단독 페이지 */}
       <Route path="/login" element={<LoginPage />} />

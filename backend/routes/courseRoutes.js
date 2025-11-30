@@ -193,36 +193,49 @@ router.get("/:id", async (req, res) => {
   }
 });
 
+
 /**
  * ❤️ 찜 토글: POST /api/courses/:id/like
+ *  - 이미 찜했으면 취소, 아니면 찜
+ *  - 결과: { liked: true/false }
  */
 router.post("/:id/like", authMiddleware, async (req, res) => {
   try {
     const courseId = req.params.id;
-    const user = await User.findById(req.user.userId);
 
+    // 1) 로그인 유저 찾기
+    const user = await User.findById(req.user.userId);
     if (!user) {
       return res.status(404).json({ message: "사용자를 찾을 수 없습니다." });
     }
 
+    // 2) likedCourses 필드가 없거나 배열이 아니면 안전하게 초기화
+    if (!Array.isArray(user.likedCourses)) {
+      user.likedCourses = [];
+    }
+
+    // 3) 이미 있는지 확인
     const idx = user.likedCourses.findIndex(
       (cid) => String(cid) === String(courseId)
     );
 
     let liked;
     if (idx === -1) {
+      // 🔼 새로 찜
       user.likedCourses.push(courseId);
       liked = true;
     } else {
+      // 🔽 찜 취소
       user.likedCourses.splice(idx, 1);
       liked = false;
     }
 
     await user.save();
-    res.json({ liked });
+
+    return res.json({ liked });
   } catch (error) {
     console.error("toggle like error:", error);
-    res.status(500).json({ message: "찜 처리 실패" });
+    return res.status(500).json({ message: "찜 처리 실패(서버 오류)" });
   }
 });
 

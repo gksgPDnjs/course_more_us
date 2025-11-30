@@ -10,6 +10,7 @@ import recommendRoutes from "./routes/recommendRoutes.js";
 import randomRoutes from "./routes/randomRoutes.js";
 import kakaoRoutes from "./routes/kakaoRoutes.js";
 import uploadRoutes from "./routes/uploadRoutes.js";
+import adminRoutes from "./routes/adminRoutes.js";
 
 dotenv.config();
 const MONGODB_URI = process.env.MONGODB_URI;
@@ -36,6 +37,7 @@ app.use("/uploads", express.static("uploads"));
 // API 라우트들
 app.use("/api/courses", courseRoutes);
 app.use("/api/auth", authRoutes);
+app.use("/api/admin", adminRoutes);
 app.use("/api/recommend", recommendRoutes);
 app.use("/api/random", randomRoutes);
 app.use("/api/kakao", kakaoRoutes);

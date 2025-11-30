@@ -7,16 +7,15 @@ import { buildUnsplashKeyword } from "./api/unsplashKeyword";
 import { fetchUnsplashImage } from "./api/unsplash";
 
 const API_BASE_URL = "http://localhost:4000";
+
 /** 이미지 경로를 완전한 URL로 변환 */
 function resolveImageUrl(raw) {
   if (!raw) return null;
-  // 이미 http로 시작하면 그대로 사용 (Unsplash, 향후 서버 도메인 포함 값)
-  if (/^https?:\/\//.test(raw)) return raw;
-  // "/uploads/xxxxx.jpg" 형태면 백엔드 주소를 붙여줌
+  if (/^https?:\/\//.test(raw)) return raw; // 이미 절대 URL
   if (raw.startsWith("/uploads/")) {
     return `${API_BASE_URL}${raw}`;
   }
-  return raw; // 그 외는 일단 그대로
+  return raw;
 }
 
 /* ---------------- 공통 유틸 / 간단 auth 훅 ---------------- */
@@ -27,7 +26,7 @@ function getRegionMainName(region) {
     return region.keywords[0]; // 예: "홍대", "강남역"
   }
   if (region.label) {
-    return region.label.split("/")[0].trim(); // 예: "홍대/신촌/마포/연남" -> "홍대"
+    return region.label.split("/")[0].trim();
   }
   return region.id || "";
 }
@@ -87,9 +86,14 @@ function RecommendPage() {
 
         if (!res.ok) {
           throw new Error(data?.message || "코스 목록 조회 실패");
-        }
+        }   
 
-        setCourses(data);
+        //여기서 approved === true인 코스만 남김 (승인된 코스만 필터링)
+        const approvedCourses = Array.isArray(data)
+          ? data.filter((c) => c.approved === true)
+          : [];
+
+        setCourses(approvedCourses);
       } catch (err) {
         console.error(err);
         setCoursesError(
@@ -139,7 +143,9 @@ function RecommendPage() {
       ? courses
       : courses.filter((c) => c.city === selectedRegionId);
 
-  // 🔥 1) 유저 코스 리스트용 Unsplash 대표 이미지 로딩
+  /* --------------------------------------
+   * 🔥 1) 유저 코스 리스트용 Unsplash 대표 이미지 로딩
+   -------------------------------------- */
   useEffect(() => {
     if (!filteredCourses || filteredCourses.length === 0) return;
 
@@ -149,15 +155,16 @@ function RecommendPage() {
       const updates = {};
 
       for (const course of targets) {
-        // 이미 이미지가 있으면 다시 안 불러옴
+        // 이미 서버에 이미지가 있으면 패스
         if (course.heroImageUrl || course.imageUrl || course.thumbnailUrl) {
-        continue;
-      }
-
+          continue;
+        }
+        // 이미 캐시에 있으면 패스
+        if (cardImages[course._id]) continue;
 
         try {
           const keyword = buildUnsplashKeyword(course);
-          const url = await fetchUnsplashImage(keyword, course._id);
+          const url = await fetchUnsplashImage(keyword);
           if (url) {
             updates[course._id] = url;
           }
@@ -173,9 +180,11 @@ function RecommendPage() {
 
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filteredCourses]); // cardImages는 일부러 deps에서 제외
+  }, [filteredCourses]); // cardImages는 deps에서 제외 (일부러)
 
-  // 🔥 2) 자동 코스 리스트용 Unsplash 대표 이미지 로딩
+  /* --------------------------------------
+   * 🔥 2) 자동 코스 리스트용 Unsplash 대표 이미지 로딩
+   -------------------------------------- */
   useEffect(() => {
     if (!autoCourses || autoCourses.length === 0) return;
 
@@ -186,14 +195,15 @@ function RecommendPage() {
 
       for (const course of targets) {
         if (!course.id) continue;
-        // 이미 이미지가 있으면 다시 안 불러옴
-         if (cardImages[String(course._id)]) continue;
+        // 이미 캐시에 있으면 패스
+        if (autoCardImages[course.id]) continue;
+
         try {
           const keyword = buildUnsplashKeyword({
             ...course,
             city: course.regionId, // regionId를 city로 매핑
           });
-          const url = await fetchUnsplashImage(keyword, course.id);
+          const url = await fetchUnsplashImage(keyword);
           if (url) {
             updates[course.id] = url;
           }
@@ -213,7 +223,7 @@ function RecommendPage() {
 
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoCourses]); // autoCardImages는 일부러 deps에서 제외
+  }, [autoCourses]); // autoCardImages는 deps에서 제외
 
   // 💜 리스트에서 바로 찜 토글
   const handleToggleLike = async (courseId) => {
@@ -237,21 +247,17 @@ function RecommendPage() {
       const idStr = String(courseId);
 
       if (data.liked) {
-        // 새로 찜
         setLikedIds((prev) =>
           prev.includes(idStr) ? prev : [...prev, idStr]
         );
       } else {
-        // 찜 해제
         setLikedIds((prev) => prev.filter((cid) => cid !== idStr));
       }
 
-      // 로컬 likesCount도 같이 업데이트 (있을 때만)
       setCourses((prev) =>
         prev.map((c) => {
           if (String(c._id) !== idStr) return c;
-          const prevLikes =
-            c.likesCount ?? c.likeCount ?? c.likes ?? 0;
+          const prevLikes = c.likesCount ?? c.likeCount ?? c.likes ?? 0;
           const diff = data.liked ? 1 : -1;
           const next = Math.max(0, prevLikes + diff);
           return { ...c, likesCount: next };
@@ -302,7 +308,7 @@ function RecommendPage() {
       return;
     }
 
-    const baseName = getRegionMainName(region); // 예: "홍대"
+    const baseName = getRegionMainName(region);
     const { x, y } = region.center || {};
     const blacklistRegex = /(스터디|독서실|학원|공부|독학|고시원)/i;
 
@@ -358,7 +364,7 @@ function RecommendPage() {
     const blacklistRegex = /(스터디|독서실|학원|공부|독학|고시원)/i;
 
     const fetchOnce = async (useCenter) => {
-      let params = {
+      const params = {
         keyword,
         size: 15,
       };
@@ -369,13 +375,7 @@ function RecommendPage() {
         params.radius = 5000;
       }
 
-      const docs = await callKakaoSearch({
-        keyword: params.keyword,
-        x: params.x,
-        y: params.y,
-        radius: params.radius,
-        size: params.size,
-      }).catch(() => []);
+      const docs = await callKakaoSearch(params).catch(() => []);
 
       if (!docs || docs.length === 0) return [];
 
@@ -520,8 +520,8 @@ function RecommendPage() {
             color: "#6b7280",
           }}
         >
-          * 서울 전체를 선택하면 모든 지역의 코스를 함께 보여줘요. 특정
-          지역을 선택하면 그 지역에 맞는 추천만 볼 수 있어요.
+          * 서울 전체를 선택하면 모든 지역의 코스를 함께 보여줘요. 특정 지역을
+          선택하면 그 지역에 맞는 추천만 볼 수 있어요.
         </p>
       </section>
 
@@ -537,17 +537,17 @@ function RecommendPage() {
         }}
       >
         <TabButton
-          label="내 서비스에 등록된 코스"
+          label="유저가 등록한 코스"
           active={activeTab === "user"}
           onClick={() => setActiveTab("user")}
         />
         <TabButton
-          label="이 지역 자동 데이트 코스"
+          label="랜덤 추천 데이트 코스"
           active={activeTab === "auto"}
           onClick={() => setActiveTab("auto")}
         />
         <TabButton
-          label="이 지역 카카오 추천 장소"
+          label="카카오 추천 장소"
           active={activeTab === "kakao"}
           onClick={() => setActiveTab("kakao")}
         />
@@ -581,8 +581,7 @@ function RecommendPage() {
                   {filteredCourses.map((course) => {
                     const regionLabel = getRegionLabel(course.city);
                     const hasSteps =
-                      Array.isArray(course.steps) &&
-                      course.steps.length > 0;
+                      Array.isArray(course.steps) && course.steps.length > 0;
                     const firstStep = hasSteps ? course.steps[0] : null;
 
                     const likes =
@@ -591,21 +590,21 @@ function RecommendPage() {
                       course.likes ??
                       undefined;
 
-                    const isLiked = likedIds.includes(
-                      String(course._id)
-                    );
+                    const isLiked = likedIds.includes(String(course._id));
+
                     const manualImageUrl = resolveImageUrl(
-                    course.heroImageUrl ||
-                      course.imageUrl ||
-                      course.thumbnailUrl ||
-                      null
-                  );
-                  const finalImgUrl = manualImageUrl || cardImages[course._id] || null;
+                      course.heroImageUrl ||
+                        course.imageUrl ||
+                        course.thumbnailUrl ||
+                        null
+                    );
+                    const finalImgUrl =
+                      manualImageUrl || cardImages[course._id] || null;
 
                     return (
                       <CourseCard
                         key={course._id}
-                        to={`/courses/${course._id}`} 
+                        to={`/courses/${course._id}`}
                         imageUrl={finalImgUrl}
                         mood={course.mood}
                         title={course.title}

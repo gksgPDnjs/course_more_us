@@ -11,7 +11,7 @@ const API_BASE_URL = "http://localhost:4000";
 function resolveImageUrl(url) {
   if (!url) return null;
   if (url.startsWith("http")) return url; // 이미 완전한 주소면 그대로
-  return `${API_BASE_URL}${url}`;         // /uploads/xxx → http://localhost:4000/uploads/xxx
+  return `${API_BASE_URL}${url}`; // /uploads/xxx → http://localhost:4000/uploads/xxx
 }
 
 // city(지역 id) -> 라벨 변환
@@ -37,10 +37,7 @@ function getStepInfo(step) {
   const name = step.place || step.title || "장소 미입력";
   const addr = step.address || "";
 
-  // 1순위: DB에 저장된 kakaoUrl
   let url = step.kakaoUrl || step.url || "";
-
-  // 2순위: kakaoPlaceId 가 있으면 Kakao place URL 재구성
   const placeId = step.kakaoPlaceId || step.placeId;
   if (!url && placeId) {
     url = `https://place.map.kakao.com/${placeId}`;
@@ -85,7 +82,7 @@ function CourseDetail() {
 
   // ❤️ 이 코스가 내가 찜한 코스인지 확인
   const fetchLikedState = async (courseId) => {
-    if (!token) return; // 로그인 안 했으면 체크 안 함
+    if (!token) return;
 
     try {
       const res = await fetch(`${API_BASE_URL}/api/courses/liked/me`, {
@@ -183,7 +180,6 @@ function CourseDetail() {
 
       setCourse(data);
 
-      // 코스가 로딩되면 좋아요 상태 + 최근 본 코스 기록
       const courseId = data._id || id;
       await Promise.all([
         fetchLikedState(courseId),
@@ -223,7 +219,7 @@ function CourseDetail() {
       }
 
       alert("삭제되었습니다.");
-      window.location.href = "/"; // 목록으로 이동
+      window.location.href = "/";
     } catch (error) {
       console.error("Delete error:", error);
       alert("삭제 실패 😢");
@@ -237,29 +233,22 @@ function CourseDetail() {
   }, [id]);
 
   /* --------------------------------------
-     🔥 대표 이미지 로딩
-     1) 내가 업로드한 heroImageUrl / imageUrl / thumbnailUrl 우선
-     2) 없으면 Unsplash에서 대체 이미지
+     🔥 대표 이미지 로딩 (업로드 > Unsplash)
   -------------------------------------- */
   useEffect(() => {
     if (!course) return;
 
-    // 1️⃣ 수동 이미지 먼저 확인
     const manualRaw =
-      course.heroImageUrl ||
-      course.imageUrl ||
-      course.thumbnailUrl ||
-      "";
+      course.heroImageUrl || course.imageUrl || course.thumbnailUrl || "";
 
     const manualResolved = resolveImageUrl(manualRaw);
 
     if (manualResolved) {
       setHeroUrl(manualResolved);
       setHeroLoading(false);
-      return; // 업로드 이미지 있으면 Unsplash는 안 감
+      return;
     }
 
-    // 2️⃣ 수동 이미지가 없을 때만 Unsplash 호출
     const keyword = buildUnsplashKeyword(course);
     console.log("🧩 CourseDetail에서 만든 Unsplash keyword:", keyword);
 
@@ -289,7 +278,7 @@ function CourseDetail() {
     };
   }, [course]);
 
-  // 로딩 중
+  // 로딩 / 에러 처리
   if (loading) {
     return (
       <div className="app">
@@ -298,7 +287,6 @@ function CourseDetail() {
     );
   }
 
-  // 에러 or 해당 코스 없음
   if (error || !course) {
     return (
       <div className="app">
@@ -313,212 +301,102 @@ function CourseDetail() {
   const regionLabel = getRegionLabel(course.city || course.location);
   const hasSteps = Array.isArray(course.steps) && course.steps.length > 0;
   const totalSteps = hasSteps ? course.steps.length : 0;
+  const moodLabel = course.mood || "내 코스";
 
   return (
-    <section className="card" style={{ padding: 20 }}>
-      {/* 상단 헤더 */}
-      <header
-        style={{
-          marginBottom: 16,
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          gap: 12,
-        }}
-      >
-        <div>
-          <h2 className="section-title" style={{ marginBottom: 8 }}>
-            {course.title}
-          </h2>
-          <p style={{ fontSize: 14, color: "#6b7280" }}>
-            {regionLabel && <>📍 {regionLabel}</>}{" "}
-            {hasSteps && <>· 총 {totalSteps}단계 코스</>}
+    <div className="auto-detail-page">
+      {/* ===== 상단 히어로 영역 (Auto와 동일 레이아웃) ===== */}
+      <section className="auto-detail-hero">
+        <div className="auto-detail-hero-image-wrap">
+          <div className="auto-detail-hero-bg" />
+          {!heroLoading && heroUrl && (
+            <img
+              src={heroUrl}
+              alt="코스 대표 이미지"
+              className="auto-detail-hero-image"
+              onError={(e) => {
+                e.target.style.display = "none";
+              }}
+            />
+          )}
+        </div>
+
+        <div className="auto-detail-hero-content">
+          <p className="auto-detail-badge">{moodLabel}</p>
+          <h1 className="auto-detail-title">{course.title}</h1>
+          <p className="auto-detail-submeta">
+            {regionLabel && <>📍 {regionLabel}</>} ·{" "}
+            {hasSteps ? `총 ${totalSteps}단계 코스` : "단계 정보 없음"}
+          </p>
+
+          <div className="auto-detail-hero-buttons">
+            <Link
+              to="/"
+              className="btn btn-secondary btn-sm"
+              style={{ fontSize: 12 }}
+            >
+              ← 코스 목록으로
+            </Link>
+
+            {token && (
+              <button
+                type="button"
+                onClick={handleToggleLike}
+                disabled={likeLoading}
+                className={`btn btn-secondary btn-sm auto-detail-like-btn ${
+                  liked ? "liked" : ""
+                }`}
+              >
+                {liked ? "💜 찜해둔 코스" : "🤍 찜하기"}
+              </button>
+            )}
+
+            {isOwner && (
+              <button
+                type="button"
+                onClick={handleDelete}
+                className="btn btn-danger btn-sm"
+              >
+                삭제
+              </button>
+            )}
+          </div>
+        </div>
+      </section>
+
+      {/* ===== 아래: 타임라인 영역도 Auto 스타일로 ===== */}
+      <section className="auto-detail-body card">
+        <div className="auto-detail-body-header">
+          <h2 className="auto-detail-section-title">데이트 코스 타임라인</h2>
+          <p className="auto-detail-section-desc">
+            내가 직접 기록해 둔 데이트 코스예요. 다음에 또 가고 싶을 때
+            타임라인을 참고해 보세요.
           </p>
         </div>
 
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          {token && (
-            <button
-              type="button"
-              className="btn btn-secondary btn-sm"
-              onClick={handleToggleLike}
-              disabled={likeLoading}
-              style={{
-                minWidth: 96,
-                backgroundColor: liked ? "#f97373" : "white",
-                color: liked ? "white" : "#111827",
-                borderColor: liked ? "#f97373" : "#e5e7eb",
-              }}
-            >
-              {liked ? "💜 찜해둔 코스" : "🤍 찜하기"}
-            </button>
-          )}
-
-          {isOwner && (
-            <button
-              className="btn btn-danger btn-sm"
-              onClick={handleDelete}
-              style={{ minWidth: 80 }}
-            >
-              삭제
-            </button>
-          )}
-        </div>
-      </header>
-
-      {/* 🔙 위 왼쪽 구석에 작은 뒤로가기 버튼 */}
-      <div style={{ marginBottom: 12 }}>
-        <Link
-          to="/"
-          className="btn btn-secondary btn-sm"
-          style={{ fontSize: 12 }}
-        >
-          ← 목록으로
-        </Link>
-      </div>
-
-      {/* ⭐ 대표 이미지 */}
-      <div
-        style={{
-          marginBottom: 20,
-          borderRadius: 20,
-          overflow: "hidden",
-          boxShadow: "0 18px 40px rgba(15,23,42,0.12)",
-          position: "relative",
-          background: "linear-gradient(135deg,#eef2ff,#fce7f3,#e0f2fe)",
-          minHeight: 180,
-        }}
-      >
-        {heroLoading && (
-          <div
-            style={{
-              width: "100%",
-              height: 260,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontSize: 14,
-              color: "#6b7280",
-            }}
-          >
-            이미지 불러오는 중...
-          </div>
+        {likeError && (
+          <p style={{ marginTop: 4, fontSize: 12, color: "red" }}>
+            {likeError}
+          </p>
         )}
 
-        {!heroLoading && heroUrl && (
-          <img
-            src={heroUrl}
-            alt="코스 대표 이미지"
-            style={{
-              width: "100%",
-              height: 260,
-              objectFit: "cover",
-              display: "block",
-            }}
-            onError={(e) => {
-              e.target.style.display = "none";
-            }}
-          />
-        )}
-      </div>
-
-      {likeError && (
-        <p style={{ marginTop: 4, fontSize: 12, color: "red" }}>{likeError}</p>
-      )}
-
-      {/* 👣 타임라인 / 설명 */}
-      {hasSteps ? (
-        <>
-          <h3 style={{ marginBottom: 12, fontSize: 16 }}>
-            데이트 코스 타임라인
-          </h3>
-
-          <div
-            style={{
-              borderLeft: "2px solid #e5e7eb",
-              paddingLeft: 16,
-              marginLeft: 10,
-              display: "flex",
-              flexDirection: "column",
-              gap: 16,
-            }}
-          >
+        {hasSteps ? (
+          <ul className="auto-detail-step-list">
             {course.steps.map((step, index) => {
               const stepNo = index + 1;
               const info = getStepInfo(step);
+              const label = step.title || `코스 ${stepNo}`;
 
               return (
-                <div
-                  key={index}
-                  style={{
-                    display: "flex",
-                    gap: 12,
-                    alignItems: "flex-start",
-                  }}
-                >
-                  {/* 동그라미 + 단계 번호 */}
-                  <div
-                    style={{
-                      width: 40,
-                      display: "flex",
-                      flexDirection: "column",
-                      alignItems: "center",
-                      marginTop: 8,
-                    }}
-                  >
-                    <div
-                      style={{
-                        width: 24,
-                        height: 24,
-                        borderRadius: "999px",
-                        background:
-                          "radial-gradient(circle at 30% 30%, #a855f7, #4f46e5)",
-                        boxShadow:
-                          "0 10px 20px rgba(79,70,229,0.25), 0 0 0 6px rgba(129,140,248,0.15)",
-                      }}
-                    />
-                    <span
-                      style={{
-                        marginTop: 6,
-                        fontSize: 12,
-                        color: "#6b7280",
-                      }}
-                    >
-                      {stepNo}단계
-                    </span>
-                  </div>
+                <li key={index} className="auto-detail-step-card">
+                  <div className="auto-detail-step-icon">{stepNo}</div>
 
-                  {/* 내용 카드 */}
-                  <div
-                    style={{
-                      flex: 1,
-                      background:
-                        "radial-gradient(circle at top left,#ffffff,#f9fafb)",
-                      borderRadius: 18,
-                      padding: "14px 16px",
-                      boxShadow:
-                        "0 18px 40px rgba(15,23,42,0.08), 0 0 0 1px rgba(148,163,184,0.15)",
-                    }}
-                  >
-                    <p
-                      style={{
-                        marginBottom: 4,
-                        fontSize: 14,
-                        fontWeight: 600,
-                        color: "#111827",
-                      }}
-                    >
-                      {info.name}
-                    </p>
+                  <div className="auto-detail-step-body">
+                    <h3 className="auto-detail-step-title">{label}</h3>
+                    <p className="auto-detail-step-name">{info.name}</p>
 
                     {info.addr && (
-                      <p
-                        style={{
-                          marginBottom: 8,
-                          fontSize: 13,
-                          color: "#6b7280",
-                        }}
-                      >
+                      <p className="auto-detail-step-addr">
                         📍 {info.addr}
                       </p>
                     )}
@@ -528,6 +406,7 @@ function CourseDetail() {
                         display: "flex",
                         flexWrap: "wrap",
                         gap: 6,
+                        marginTop: 6,
                         marginBottom: info.memo ? 8 : 0,
                       }}
                     >
@@ -576,33 +455,38 @@ function CourseDetail() {
                         href={info.url}
                         target="_blank"
                         rel="noreferrer"
-                        className="btn btn-secondary btn-sm"
-                        style={{ marginTop: 8 }}
+                        className="auto-detail-step-link"
                       >
-                        카카오맵에서 보기
+                        카카오맵에서 보기 →
                       </a>
                     )}
                   </div>
-                </div>
+                </li>
               );
             })}
-          </div>
-        </>
-      ) : (
-        <>
-          {course.location && (
-            <p style={{ marginTop: 12, color: "#6b7280", fontSize: 14 }}>
-              📍 {course.location}
-            </p>
-          )}
-          {course.description && (
-            <p style={{ marginTop: 16, fontSize: 14 }}>
-              {course.description}
-            </p>
-          )}
-        </>
-      )}
-    </section>
+          </ul>
+        ) : (
+          <>
+            {course.location && (
+              <p style={{ marginTop: 12, color: "#6b7280", fontSize: 14 }}>
+                📍 {course.location}
+              </p>
+            )}
+            {course.description && (
+              <p style={{ marginTop: 16, fontSize: 14 }}>
+                {course.description}
+              </p>
+            )}
+          </>
+        )}
+
+        <div className="auto-detail-bottom-actions">
+          <Link to="/" className="btn btn-secondary btn-sm">
+            ← 코스 목록으로 돌아가기
+          </Link>
+        </div>
+      </section>
+    </div>
   );
 }
 

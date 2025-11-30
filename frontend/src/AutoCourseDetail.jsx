@@ -14,37 +14,33 @@ function getRegionLabel(cityId) {
 }
 
 // 🔎 Kakao place → 이름/주소/URL 정리 + URL 보정
-// 👇 이 함수만 교체
-function getPlaceInfo(place) {
-  if (!place) {
-    return {
-      name: "장소 이름 없음",
-      addr: "",
-      url: null,
-    };
+function getPlaceInfo(placeObj) {
+  if (!placeObj) {
+    return { name: "장소 이름 없음", addr: "", url: "" };
   }
 
-  const name = place.place_name || place.name || "장소 이름 없음";
+  const name =
+    placeObj.place_name ||
+    placeObj.name ||
+    placeObj.place ||
+    "장소 이름 없음";
+
   const addr =
-    place.road_address_name ||
-    place.address_name ||
-    place.address || // 혹시 address 필드로 들어온 경우
+    placeObj.road_address_name ||
+    placeObj.address_name ||
+    placeObj.address ||
     "";
 
-  // 1순위: kakao에서 직접 온 place_url
-  // 2순위: 우리가 저장해둔 kakaoUrl
-  let rawUrl = place.place_url || place.kakaoUrl || "";
+  const kakaoPlaceId = placeObj.id || placeObj.kakaoPlaceId || "";
+  let url = placeObj.place_url || "";
 
-  // 그래도 없으면 id로 place URL 직접 만들기
-  if (!rawUrl && (place.id || place.kakaoPlaceId)) {
-    const pid = place.id || place.kakaoPlaceId;
-    rawUrl = `https://place.map.kakao.com/${pid}`;
+  if (!url && kakaoPlaceId) {
+    url = `https://place.map.kakao.com/${kakaoPlaceId}`;
   }
-
-  const url = rawUrl || null;
 
   return { name, addr, url };
 }
+
 
 function AutoCourseDetail() {
   const location = useLocation();
