@@ -359,58 +359,64 @@ function RecommendPage() {
   };
 
   // -------------------- 3. 좌표 기반 키워드 검색 (자동 코스용) --------------------
-  async function searchByCategory(region, keyword) {
-    const { x, y } = region.center || {};
-    const blacklistRegex = /(스터디|독서실|학원|공부|독학|고시원)/i;
+    // -------------------- 3. 좌표 기반 키워드 검색 (자동 코스용) --------------------
 
-    const fetchOnce = async (useCenter) => {
-      const params = {
-        keyword,
-        size: 15,
-      };
+  // 공통 필터 정규식
+  const PLACE_BLACKLIST = /(스터디|독서실|학원|공부|독학|고시원)/i;
+  const CAFE_REGEX = /(카페|coffee|커피|브런치|디저트)/i;
+  const NOT_CAFE_REGEX = /(카페|coffee|커피|디저트|베이커리)/i;
 
-      if (useCenter && x && y) {
-        params.x = x;
-        params.y = y;
-        params.radius = 5000;
-      }
+  // 🔎 카카오에서 받아온 docs를 카테고리/블랙리스트 기준으로 필터링
+  function filterPlacesByCategory(docs, keyword) {
+    if (!docs || docs.length === 0) return [];
 
-      const docs = await callKakaoSearch(params).catch(() => []);
+    // 1) 스터디/독서실 같은 곳 제거
+    let filtered = docs.filter(
+      (p) => !PLACE_BLACKLIST.test(p.place_name || "")
+    );
 
-      if (!docs || docs.length === 0) return [];
-
-      let filtered = docs.filter(
-        (p) => !blacklistRegex.test(p.place_name || "")
+    // 2) 카페/맛집에 따라 추가 필터
+    if (keyword.includes("카페")) {
+      const onlyCafe = filtered.filter((p) =>
+        CAFE_REGEX.test(p.place_name || "")
       );
-
-      if (keyword.includes("카페")) {
-        const cafeRegex = /(카페|coffee|커피|브런치|디저트)/i;
-        const onlyCafe = filtered.filter((p) =>
-          cafeRegex.test(p.place_name || "")
-        );
-        if (onlyCafe.length > 0) filtered = onlyCafe;
-      } else if (keyword.includes("맛집")) {
-        const notCafeRegex = /(카페|coffee|커피|디저트|베이커리)/i;
-        const onlyFood = filtered.filter(
-          (p) => !notCafeRegex.test(p.place_name || "")
-        );
-        if (onlyFood.length > 0) filtered = onlyFood;
-      }
-
-      if (filtered.length === 0) return docs;
-      return filtered;
-    };
-
-    let candidates = await fetchOnce(true);
-
-    if (!candidates || candidates.length === 0) {
-      candidates = await fetchOnce(false);
+      if (onlyCafe.length > 0) filtered = onlyCafe;
+    } else if (keyword.includes("맛집")) {
+      const onlyFood = filtered.filter(
+        (p) => !NOT_CAFE_REGEX.test(p.place_name || "")
+      );
+      if (onlyFood.length > 0) filtered = onlyFood;
     }
 
-    if (!candidates || candidates.length === 0) return null;
+    // 3) 필터링 결과가 비면 원본 docs로 fallback
+    if (filtered.length === 0) return docs;
 
-    const limit = Math.min(candidates.length, 5);
-    return candidates[Math.floor(Math.random() * limit)];
+    return filtered;
+  }
+
+  /**
+   * center(x,y) 기준 + radius(m) 안에서 keyword로 장소 하나 랜덤 선택
+   * - center가 없으면 키워드만으로 검색
+   */
+  async function searchByCategoryWithCenter(center, keyword, radius = 5000, size = 15) {
+    const { x, y } = center || {};
+
+    const docs = await callKakaoSearch({
+      keyword,
+      x: x && y ? x : undefined,
+      y: x && y ? y : undefined,
+      radius: x && y ? radius : undefined,
+      size,
+    }).catch(() => []);
+
+    if (!docs || docs.length === 0) return null;
+
+    const filtered = filterPlacesByCategory(docs, keyword);
+
+    // 상위 몇 개 안에서 랜덤 뽑기
+    const limit = Math.min(filtered.length, 5);
+    const idx = Math.floor(Math.random() * limit);
+    return filtered[idx];
   }
 
   // -------------------- 4. 자동 코스 여러 개 쌓기 --------------------
@@ -422,11 +428,61 @@ function RecommendPage() {
         return;
       }
 
-      const baseName = getRegionMainName(region);
+      const baseName = getRegionMainName(region); // 예: "홍대"
 
-      const cafe = await searchByCategory(region, `${baseName} 카페`);
-      const food = await searchByCategory(region, `${baseName} 맛집`);
-      const spot = await searchByCategory(region, `${baseName} 데이트 코스`);
+      // 1️⃣ 1단계: 지역 중심 기준으로 5km 안에서 카페 찾기
+      const cafe = await searchByCategoryWithCenter(
+        region.center,
+        `${baseName} 카페`,
+        5000
+      );
+
+      if (!cafe) {
+        alert("이 지역에서 카페 후보를 찾지 못했어요 ㅠㅠ");
+        return;
+      }
+
+      // 2️⃣ 2단계: 1단계 카페 좌표 기준 1km 안에서 맛집 찾기
+      let food = await searchByCategoryWithCenter(
+        { x: cafe.x, y: cafe.y },
+        `${baseName} 맛집`,
+        1000
+      );
+
+      // 만약 근처에서 못 찾으면, 다시 지역 중심 5km로 fallback
+      if (!food) {
+        food = await searchByCategoryWithCenter(
+          region.center,
+          `${baseName} 맛집`,
+          5000
+        );
+      }
+
+      // 3️⃣ 3단계: 2단계(밥집) 기준 2km 안에서 볼거리 찾기
+      // (밥집이 없으면 일단 카페 기준 또는 지역 기준으로 fallback)
+      let spotCenter;
+      if (food && food.x && food.y) {
+        spotCenter = { x: food.x, y: food.y };
+      } else if (cafe && cafe.x && cafe.y) {
+        spotCenter = { x: cafe.x, y: cafe.y };
+      } else {
+        spotCenter = region.center;
+      }
+
+      let spot = await searchByCategoryWithCenter(
+        spotCenter,
+        `${baseName} 데이트 코스`,
+        2000
+      );
+
+      // 그래도 없으면 지역 기준 5km로 한 번 더 시도
+      if (!spot) {
+        spot = await searchByCategoryWithCenter(
+          region.center,
+          `${baseName} 데이트 코스`,
+          5000
+        );
+      }
 
       const steps = [
         cafe && { type: "cafe", label: "카페", place: cafe },
@@ -456,6 +512,8 @@ function RecommendPage() {
       alert(err.message || "자동 코스를 만드는 중 오류가 발생했어요.");
     }
   };
+
+  
 
   // -------------------- 5. JSX --------------------
   return (
