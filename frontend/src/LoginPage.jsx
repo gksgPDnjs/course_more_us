@@ -199,6 +199,30 @@ function LoginPage() {
           {buttonText}
         </button>
       </form>
+      <div style={{ marginTop: 20, textAlign: "center" }}>
+  <p style={{ fontSize: 13, color: "#888", marginBottom: 8 }}>
+    또는
+  </p>
+
+  <button
+    className="btn btn-kakao"
+    type="button"
+    onClick={() => {
+      window.location.href = `${API_BASE_URL}/api/auth/kakao`;
+    }}
+    style={{
+      width: "100%",
+      backgroundColor: "#FEE500",
+      border: "1px solid #F0D700",
+      color: "#000",
+      padding: "10px 0",
+      borderRadius: 6,
+      fontWeight: 600,
+    }}
+  >
+    카카오로 로그인하기
+  </button>
+</div>
     </div>
   );
 }

@@ -18,6 +18,7 @@ import AutoCourseDetail from "./AutoCourseDetail.jsx";
 import HomePage from "./HomePage.jsx";
 import MyPage from "./pages/Mypage.jsx";
 import AdminCoursesPage from "./AdminCoursesPage";
+import LoginSuccessPage from "./LoginSuccessPage.jsx";
 
 const API_BASE_URL = "http://localhost:4000";
 
@@ -718,6 +719,7 @@ function App() {
 
       {/* 로그인은 레이아웃 없이 단독 페이지 */}
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/login/success" element={<LoginSuccessPage />} />
     </Routes>
   );
 }

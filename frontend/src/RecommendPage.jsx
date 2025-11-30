@@ -90,7 +90,7 @@ function RecommendPage() {
 
         //여기서 approved === true인 코스만 남김 (승인된 코스만 필터링)
         const approvedCourses = Array.isArray(data)
-          ? data.filter((c) => c.approved === true)
+          ? data.filter((c) => c.approved === true && c.sourceType !== "auto")
           : [];
 
         setCourses(approvedCourses);
@@ -632,7 +632,7 @@ function RecommendPage() {
       {activeTab === "auto" && (
         <section style={{ marginTop: 8 }}>
           <h3 style={{ marginBottom: 10, fontSize: 16 }}>
-            이 지역 자동 데이트 코스
+            이 지역 랜덤 데이트 코스
           </h3>
 
           <button
@@ -646,7 +646,7 @@ function RecommendPage() {
               fetchAutoCourse(selectedRegionId);
             }}
           >
-            이 지역 자동 데이트 코스 만들기 (β)
+            자동 데이트 코스 만들기
           </button>
 
           <p style={{ marginTop: 6, fontSize: 12, color: "#9ca3af" }}>

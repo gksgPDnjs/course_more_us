@@ -109,109 +109,121 @@ function AutoCourseDetail() {
   // ------------------------------------------------
   // 1. 자동 코스를 실제 "내 코스"로 저장
   // ------------------------------------------------
-  const ensureSavedCourse = async () => {
-    if (savedCourseId) return savedCourseId;
+  // 🔥 자동 생성 코스 저장 전용 함수
+const ensureSavedCourse = async () => {
+  if (savedCourseId) return savedCourseId;
 
-    if (!token) {
-      alert("로그인 후 내 코스로 저장할 수 있어요.");
-      return null;
+  if (!token) {
+    alert("로그인 후 저장할 수 있어요.");
+    return null;
+  }
+
+  try {
+    setSaveLoading(true);
+
+    // 1) 백엔드가 기대하는 형식으로 steps 변환
+    const mappedSteps = (course.steps || []).map((step) => {
+      const placeObj = step.place || step;
+
+      const name =
+        placeObj.place_name || placeObj.name || step.label || "코스";
+      const addr =
+        placeObj.road_address_name || placeObj.address_name || "";
+      const kakaoUrl = placeObj.place_url || "";
+      const placeId = placeObj.id || placeObj.kakaoPlaceId || "";
+
+      return {
+        title: step.label || step.type || "코스",
+        place: name,
+        memo: "",
+        time: "",
+        budget: 0,
+        address: addr,
+        kakaoPlaceId: placeId,
+        kakaoUrl,
+      };
+    });
+
+    // 2) 요청 바디
+    const payload = {
+      title: course.title,
+      city: course.regionId,
+      mood: "자동 생성",
+      steps: mappedSteps,
+    };
+
+    // 🔥 핵심! 자동 코스는 `/api/courses/auto` 로 저장
+    const res = await fetch(`${API_BASE_URL}/api/courses/auto`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const data = await res.json().catch(() => ({}));
+
+    if (!res.ok) {
+      throw new Error(data.message || "자동 생성 코스 저장 실패");
     }
 
-    try {
-      setSaveLoading(true);
+    setSavedCourseId(data._id);
+    return data._id;
+  } catch (err) {
+    console.error("ensureSavedCourse error:", err);
+    alert(err.message || "자동 생성 코스를 저장하는 중 오류가 발생했어요.");
+    return null;
+  } finally {
+    setSaveLoading(false);
+  }
+};
 
-      const payload = {
-        title: course.title,
-        city: course.regionId,
-        mood: "auto",
-        steps: (course.steps || []).map((step) => {
-          const placeObj = step.place || step;
-          const { name, addr, url } = getPlaceInfo(placeObj);
-          const placeId = placeObj.id || placeObj.kakaoPlaceId || "";
+// 🔥 내 코스로 저장 버튼
+const handleSaveMyCourse = async () => {
+  const id = await ensureSavedCourse();
+  if (!id) return;
 
-          return {
-            title: step.label || step.type || "코스",
-            place: name,
-            memo: "",
-            time: "",
-            budget: 0,
-            address: addr || "",
-            kakaoPlaceId: placeId,
-            kakaoUrl: url || "",
-          };
-        }),
-      };
+  alert("내 코스에 저장했어요! (자동 생성 코스)");
+};
 
-      const res = await fetch(`${API_BASE_URL}/api/courses`, {
+// 🔥 찜 토글
+const handleToggleLike = async () => {
+  if (!token) {
+    alert("로그인 후 찜할 수 있어요.");
+    return;
+  }
+
+  const realId = await ensureSavedCourse();
+  if (!realId) return;
+
+  try {
+    setLikeLoading(true);
+
+    const res = await fetch(
+      `${API_BASE_URL}/api/courses/${realId}/like`,
+      {
         method: "POST",
         headers: {
-          "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify(payload),
-      });
-
-      const data = await res.json().catch(() => ({}));
-
-      if (!res.ok) {
-        throw new Error(data.message || "코스 저장 실패");
       }
+    );
 
-      setSavedCourseId(data._id);
-      return data._id;
-    } catch (err) {
-      console.error("ensureSavedCourse error:", err);
-      alert(err.message || "코스를 저장하는 중 오류가 발생했어요.");
-      return null;
-    } finally {
-      setSaveLoading(false);
-    }
-  };
+    const data = await res.json().catch(() => ({}));
 
-  const handleSaveMyCourse = async () => {
-    const id = await ensureSavedCourse();
-    if (!id) return;
-
-    alert("내 코스에 저장했어요! (코스 탭에서 확인할 수 있어요)");
-  };
-
-  const handleToggleLike = async () => {
-    if (!token) {
-      alert("로그인 후 찜할 수 있어요.");
-      return;
+    if (!res.ok) {
+      throw new Error(data.message || "찜 처리 실패");
     }
 
-    const realId = await ensureSavedCourse();
-    if (!realId) return;
-
-    try {
-      setLikeLoading(true);
-
-      const res = await fetch(
-        `${API_BASE_URL}/api/courses/${realId}/like`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      );
-
-      const data = await res.json().catch(() => ({}));
-
-      if (!res.ok) {
-        throw new Error(data.message || "찜 처리 실패");
-      }
-
-      setLiked(data.liked);
-    } catch (err) {
-      console.error("toggle like error (auto):", err);
-      alert(err.message || "찜 처리 중 오류가 발생했어요.");
-    } finally {
-      setLikeLoading(false);
-    }
-  };
-
+    setLiked(data.liked);
+  } catch (err) {
+    console.error("toggle like error (auto):", err);
+    alert(err.message || "찜 처리 중 오류가 발생했어요.");
+  } finally {
+    setLikeLoading(false);
+  }
+};
   /* --------------------------------------
      ✅ 여기부터 UI (코스모스 카드 스타일)
   -------------------------------------- */
