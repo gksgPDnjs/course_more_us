@@ -12,16 +12,16 @@ function HomePage() {
 
         {/* 🔹 메인 타이틀 */}
         <h1 className="home-title">
-          완벽한 데이트 코스를
+          마음에 드는 데이트 코스를
           <br />
-          <span className="home-title-accent">10분 안에 찾아보세요</span>
+          <span className="home-title-accent">지금 바로 찾아보세요</span>
         </h1>
 
         {/* 🔹 설명 */}
         <p className="home-desc">
-          지역과 분위기만 선택하면, 검증된 3–4단계 데이트 코스를 추천해드려요.
+          지역을 선택하면, 3–4단계 데이트 코스를 추천해드려요.
           <br />
-          결정 피로는 줄이고, 특별한 순간은 늘리세요.
+          고민 시간은 줄이고, 함께 보내는 시간은 늘리세요.
         </p>
 
         {/* 🔹 버튼 두 개 */}

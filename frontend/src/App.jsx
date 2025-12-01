@@ -63,7 +63,7 @@ function Layout() {
                     color: "inherit",
                   }}
                 >Course More Us</Link></h1>
-              <p className="app-subtitle">나만의 데이트 / 코스 기록하기 📝</p>
+              <p className="app-subtitle">데이트 코스 추천 & 기록 서비스 📝</p>
             </div>
 
             <div className="auth-buttons">
@@ -85,16 +85,16 @@ function Layout() {
           {/* 상단 네비게이션 바 */}
           <nav className="app-nav">
             <Link to="/" className="tab">
-              코스 보기
+              전체 코스
             </Link>
             <Link to="/recommend" className="tab">
-              추천받기
+              추천 받기
             </Link>
             <Link to="/random" className="tab">
-              랜덤코스
+              랜덤 코스
             </Link>
             <Link to="/new" className="tab">
-              코스 등록
+              코스 만들기
             </Link>
             <Link to="/mypage" className="tab">
               마이페이지
