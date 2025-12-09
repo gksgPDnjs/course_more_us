@@ -11,6 +11,7 @@ import randomRoutes from "./routes/randomRoutes.js";
 import kakaoRoutes from "./routes/kakaoRoutes.js";
 import uploadRoutes from "./routes/uploadRoutes.js";
 import adminRoutes from "./routes/adminRoutes.js";
+import aiRoutes from "./routes/aiRoutes.js";
 
 dotenv.config();
 const MONGODB_URI = process.env.MONGODB_URI;
@@ -42,6 +43,7 @@ app.use("/api/recommend", recommendRoutes);
 app.use("/api/random", randomRoutes);
 app.use("/api/kakao", kakaoRoutes);
 app.use("/api/upload", uploadRoutes);
+app.use("/api/ai", aiRoutes);
 
 // 테스트용 루트
 app.get("/", (req, res) => {

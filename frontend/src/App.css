@@ -677,3 +677,54 @@
     font-size: 16px;
   }
 }
+.ai-generating {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 260px;
+  gap: 16px;
+}
+
+.ai-generating-spinner {
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  border: 4px solid #e5e7eb;
+  border-top-color: #6366f1;
+  animation: aiSpin 0.8s linear infinite;
+}
+
+@keyframes aiSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.ai-generating-text {
+  font-size: 15px;
+  color: #4b5563;
+}
+
+.ai-generating-text::after {
+  content: "...";
+  animation: aiDots 1.2s steps(4, end) infinite;
+}
+
+@keyframes aiDots {
+  0% {
+    content: "";
+  }
+  25% {
+    content: ".";
+  }
+  50% {
+    content: "..";
+  }
+  75% {
+    content: "...";
+  }
+  100% {
+    content: "";
+  }
+}

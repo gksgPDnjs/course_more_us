@@ -19,6 +19,11 @@ import HomePage from "./HomePage.jsx";
 import MyPage from "./pages/Mypage.jsx";
 import AdminCoursesPage from "./AdminCoursesPage";
 import LoginSuccessPage from "./LoginSuccessPage.jsx";
+import AICourseTestPage from "./AICourseTestPage.jsx";
+import AICoursePage from "./AICoursePage.jsx";
+import AICourseResult from "./AICourseResult.jsx";
+import AICourseDetail from "./AICourseDetail.jsx";
+
 
 const API_BASE_URL = "http://localhost:4000";
 
@@ -90,8 +95,8 @@ function Layout() {
             <Link to="/recommend" className="tab">
               추천 받기
             </Link>
-            <Link to="/random" className="tab">
-              랜덤 코스
+            <Link to="/ai-course" className="tab">
+              AI 맞춤 코스
             </Link>
             <Link to="/new" className="tab">
               코스 만들기
@@ -719,8 +724,13 @@ function App() {
         {/* 추천 / 랜덤 */}
         <Route path="recommend" element={<RecommendPage />} />
         <Route path="random" element={<RandomPage />} />
+        <Route path="ai-test" element={<AICourseTestPage />} />
+        {/*ai 관련*/}
+        <Route path="ai-course" element={<AICoursePage />} />
+        <Route path="ai-course/result" element={<AICourseResult />} />
+        <Route path="ai-course/detail" element={<AICourseDetail />} />
          {/* 🔥 관리자 페이지 */}
-        <Route path="/admin/courses" element={<AdminCoursesPage />} />
+        <Route path="admin/courses" element={<AdminCoursesPage />} />
       </Route>
 
 

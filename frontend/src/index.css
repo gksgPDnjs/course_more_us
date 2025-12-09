@@ -1795,9 +1795,99 @@ body {
 
   background: rgba(22, 163, 74, 0.12);  /* 아이콘 뒤 살짝만 색 */
   font-size: 10px;
-  color: #15803d;
+  color: #4f715b;
 }
 
 .home-pill-text {
   line-height: 1;
+}
+
+:root {
+  --main-color: #b98a8a;      /* 메인 로즈 브라운 */
+  --main-hover: #be7c87;      /* hover */
+  --sub-bg: #F7EBEA;          /* 아주 연한 배경 */
+  --text-muted: #6b7280;
+}
+.btn-primary {
+  background-color: var(--main-color);
+  color: white;
+}
+
+.btn-primary:hover {
+  background-color: var(--main-hover);
+}
+
+.btn-secondary {
+  background-color: var(--sub-bg);
+  color: var(--main-color);
+}
+
+.btn-secondary:hover {
+  background-color: #f0d7d6;
+}
+.app-title-link {
+  color: var(--main-color);
+}
+
+.app-title-link:hover {
+  color: var(--main-hover);
+}
+
+.tab-active,
+.tab:hover {
+  background-color: var(--sub-bg);
+  color: var(--main-color);
+}
+.btn-primary {
+  background: var(--primary);
+  color: white;
+  padding: 12px 22px;
+  border-radius: 12px;
+  font-weight: 600;
+  box-shadow: 0 4px 12px rgba(106,103,206,0.25);
+}
+.chip-selected {
+  background: #EAE9FF;
+  color: var(--primary);
+  border: none;
+}
+.auto-map-label {
+  background: #222;
+  color: #fff;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.auto-detail-step-distance {
+  margin-top: 4px;
+  font-size: 13px;
+  color: #6b7280; /* 회색 톤 */
+}
+/* ===========================
+   AI 질문/선택 인터랙션 강화
+   =========================== */
+
+/* 질문 한 장을 감싸는 컨테이너 안 버튼 공통 효과 */
+.ai-question-slide button {
+  transition:
+    transform 0.12s ease-out,
+    box-shadow 0.12s ease-out,
+    background-color 0.16s ease-out,
+    border-color 0.16s ease-out;
+}
+
+/* hover 시 살짝 떠오르는 느낌 */
+.ai-question-slide button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.12);
+}
+
+/* 클릭할 때 톡 떨어지는 느낌 */
+.ai-question-slide button:active {
+  transform: translateY(0);
+  box-shadow: 0 4px 10px rgba(15, 23, 42, 0.18);
 }
