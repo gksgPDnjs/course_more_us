@@ -49,7 +49,7 @@ function AutoCourseDetail() {
   const [likeLoading, setLikeLoading] = useState(false);
   const [saveLoading, setSaveLoading] = useState(false);
 
-  // 🎨 대표 이미지 (Kakao Image Search via backend proxy)
+  // 🎨 대표 이미지
   const [heroUrl, setHeroUrl] = useState(null);
   const [heroLoading, setHeroLoading] = useState(false);
 
@@ -58,9 +58,10 @@ function AutoCourseDetail() {
   const [distances, setDistances] = useState([]); // [{ from, to, meters, minutes }]
 
   /* --------------------------------------
-     🔥 Kakao 대표 이미지 로딩 (backend proxy)
-     - 1순위: 1단계 장소명 기반
-     - 2순위: 지역 라벨 기반
+     ✅ 대표 이미지 로딩 우선순위
+     0) course.heroImage (백엔드가 내려준 대표)
+     1) course.steps[0].place.imageUrl (백엔드가 내려준 step 이미지)
+     2) 없으면 /api/kakao/image 로 fallback 검색
   -------------------------------------- */
   useEffect(() => {
     if (!course) return;
@@ -71,14 +72,27 @@ function AutoCourseDetail() {
       try {
         setHeroLoading(true);
 
-        const firstStep = course.steps?.[0];
-        const firstPlace = firstStep?.place || firstStep || {};
+        // ✅ 0순위: 백엔드가 내려준 heroImage
+        if (course?.heroImage) {
+          if (!cancelled) setHeroUrl(course.heroImage);
+          return;
+        }
+
+        // ✅ 1순위: 1단계 place.imageUrl
+        const step0 = course?.steps?.[0];
+        const step0Img = step0?.place?.imageUrl || step0?.imageUrl;
+        if (step0Img) {
+          if (!cancelled) setHeroUrl(step0Img);
+          return;
+        }
+
+        // ✅ 2순위: fallback (카카오 이미지 검색 proxy)
+        const firstPlace = step0?.place || step0 || {};
         const placeName =
           firstPlace.place_name || firstPlace.name || firstPlace.place || "";
 
         const regionLabel = getRegionLabel(course.regionId);
 
-        // ✅ 검색어 우선순위: (장소명 + 지역) -> (지역 + 데이트 코스)
         const q1 = placeName ? `${placeName} ${regionLabel || "서울"}` : "";
         const q2 = `${regionLabel || "서울"} 데이트 코스`;
 
@@ -92,6 +106,7 @@ function AutoCourseDetail() {
           const data = await res.json().catch(() => ({}));
 
           if (cancelled) return;
+
           if (res.ok && data?.imageUrl) {
             setHeroUrl(data.imageUrl);
             return;
@@ -99,10 +114,10 @@ function AutoCourseDetail() {
         }
 
         // 못 찾으면 null 유지
-        setHeroUrl(null);
+        if (!cancelled) setHeroUrl(null);
       } catch (e) {
         if (!cancelled) {
-          console.warn("AutoCourseDetail Kakao hero load failed:", e);
+          console.warn("AutoCourseDetail hero load failed:", e);
           setHeroUrl(null);
         }
       } finally {
@@ -132,21 +147,16 @@ function AutoCourseDetail() {
 
     const { kakao } = window;
 
-    // 1) 코스의 각 step에서 좌표(x, y) 뽑기
     const points = course.steps
       .map((step) => {
         const placeObj = step.place || step;
-        const x = parseFloat(placeObj.x); // 경도
-        const y = parseFloat(placeObj.y); // 위도
+        const x = parseFloat(placeObj.x);
+        const y = parseFloat(placeObj.y);
 
         if (Number.isNaN(x) || Number.isNaN(y)) return null;
 
         const { name } = getPlaceInfo(placeObj);
-        return {
-          lat: y,
-          lng: x,
-          name,
-        };
+        return { lat: y, lng: x, name };
       })
       .filter(Boolean);
 
@@ -155,14 +165,9 @@ function AutoCourseDetail() {
       return;
     }
 
-    // 2) 지도 생성
     const center = new kakao.maps.LatLng(points[0].lat, points[0].lng);
-    const map = new kakao.maps.Map(container, {
-      center,
-      level: 4,
-    });
+    const map = new kakao.maps.Map(container, { center, level: 4 });
 
-    // 3) 마커 + 번호 오버레이 + 경로 라인
     const bounds = new kakao.maps.LatLngBounds();
     const path = [];
 
@@ -171,24 +176,17 @@ function AutoCourseDetail() {
       path.push(position);
       bounds.extend(position);
 
-      // place URL 불러오기
       const placeObj = course.steps[idx].place || course.steps[idx];
       const { url } = getPlaceInfo(placeObj);
 
-      // 마커 생성
-      const marker = new kakao.maps.Marker({
-        position,
-        map,
-      });
+      const marker = new kakao.maps.Marker({ position, map });
 
-      // 🔥 마커 클릭 시 카카오맵 상세페이지 이동
       if (url) {
         kakao.maps.event.addListener(marker, "click", () => {
           window.open(url, "_blank");
         });
       }
 
-      // 번호 뱃지 (커스텀 오버레이)
       const overlayContent = `
         <div
           style="
@@ -214,10 +212,8 @@ function AutoCourseDetail() {
       });
     });
 
-    // 지도 범위를 모든 포인트가 보이도록 조정
     map.setBounds(bounds, 40, 40, 40, 40);
 
-    // 4) 전체 경로 폴리라인
     if (path.length >= 2) {
       const polyline = new kakao.maps.Polyline({
         path,
@@ -229,7 +225,6 @@ function AutoCourseDetail() {
       polyline.setMap(map);
     }
 
-    // 5) 각 단계 사이 거리 계산
     const newDistances = [];
     if (path.length >= 2) {
       for (let i = 0; i < path.length - 1; i++) {
@@ -237,23 +232,15 @@ function AutoCourseDetail() {
           path: [path[i], path[i + 1]],
         });
         const meters = segmentLine.getLength();
-        const minutes = Math.max(1, Math.round(meters / 67)); // 약 4km/h
+        const minutes = Math.max(1, Math.round(meters / 67));
 
-        newDistances.push({
-          from: i,
-          to: i + 1,
-          meters,
-          minutes,
-        });
+        newDistances.push({ from: i, to: i + 1, meters, minutes });
       }
     }
 
     setDistances(newDistances);
-
-    return () => {};
   }, [course]);
 
-  // 🔴 여기서부터는 훅 없음 — 조건부 return 가능
   if (!course) {
     return (
       <section className="card" style={{ padding: 20 }}>
@@ -295,8 +282,7 @@ function AutoCourseDetail() {
 
         const name =
           placeObj.place_name || placeObj.name || step.label || "코스";
-        const addr =
-          placeObj.road_address_name || placeObj.address_name || "";
+        const addr = placeObj.road_address_name || placeObj.address_name || "";
         const kakaoUrl = placeObj.place_url || "";
         const placeId = placeObj.id || placeObj.kakaoPlaceId || "";
 
@@ -365,9 +351,7 @@ function AutoCourseDetail() {
 
       const res = await fetch(`${API_BASE_URL}/api/courses/${realId}/like`, {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { Authorization: `Bearer ${token}` },
       });
 
       const data = await res.json().catch(() => ({}));
@@ -479,7 +463,6 @@ function AutoCourseDetail() {
             const stepNo = index + 1;
             const placeObj = step.place || step;
             const { name, addr, url } = getPlaceInfo(placeObj);
-
             const dist = distances.find((d) => d.from === index);
 
             return (

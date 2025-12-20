@@ -8,7 +8,8 @@ function AICoursePage() {
   const navigate = useNavigate();
   const [isGenerating, setIsGenerating] = useState(false);
 
-  const [step, setStep] = useState(0);
+  // step: -1이면 첫 화면(랜덤 vs 맞춤) 선택
+  const [step, setStep] = useState(-1);
   const [answers, setAnswers] = useState({
     withWho: "",
     region: "",
@@ -45,7 +46,7 @@ function AICoursePage() {
       {
         key: "region",
         question: "어느 지역으로 갈까요?",
-        type: "buttons", // ✅ 캡처처럼 pill 선택 UI
+        type: "chips", // ✅ pill(chips) UI
         options: regionOptions,
       },
       {
@@ -76,30 +77,50 @@ function AICoursePage() {
     [regionOptions]
   );
 
-  const current = questions[step];
+  const current = step >= 0 ? questions[step] : null;
+
+  // ✅ 공통: AI 추천 호출
+  const generateCourse = async (context) => {
+    try {
+      setIsGenerating(true);
+
+      const res = await axios.post(`${API_BASE_URL}/api/ai/recommend-course`, {
+        userContext: context,
+      });
+
+      navigate("/ai-course/result", {
+        state: { result: res.data },
+      });
+    } catch (err) {
+      console.error("AI 추천 오류:", err);
+      alert("AI 추천 중 오류가 발생했어요. 잠시 후 다시 시도해 주세요.");
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  // ✅ 랜덤 모드: 질문 옵션에서 무작위로 하나씩 뽑아 userContext 구성
+  const makeRandomContext = () => {
+    const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+    return {
+      withWho: pick(["연인", "친구", "혼자", "동료"]),
+      region: pick(regionOptions),
+      mood: pick(["설렘", "편안", "활동적", "힐링", "분위기"]),
+      weather: pick(["맑음", "흐림", "비", "눈"]),
+      budget: pick(["2만원 이하", "2~4만원", "4~7만원", "7만원 이상"]),
+      car: pick(["대중교통", "도보", "자차"]),
+    };
+  };
 
   const handleSelect = async (value) => {
+    if (!current) return;
+
     const updated = { ...answers, [current.key]: value };
     setAnswers(updated);
 
     // 마지막 질문 → AI 호출
     if (step === questions.length - 1) {
-      try {
-        setIsGenerating(true);
-
-        const res = await axios.post(`${API_BASE_URL}/api/ai/recommend-course`, {
-          userContext: updated,
-        });
-
-        navigate("/ai-course/result", {
-          state: { result: res.data },
-        });
-      } catch (err) {
-        console.error("AI 추천 오류:", err);
-        alert("AI 추천 중 오류가 발생했어요. 잠시 후 다시 시도해 주세요.");
-      } finally {
-        setIsGenerating(false);
-      }
+      await generateCourse(updated);
       return;
     }
 
@@ -108,7 +129,14 @@ function AICoursePage() {
 
   const handleBack = () => {
     if (isGenerating) return;
-    if (step === 0) return;
+
+    // step 0에서 뒤로 → 첫 화면(모드 선택)
+    if (step === 0) {
+      setStep(-1);
+      return;
+    }
+
+    if (step <= -1) return;
     setStep((prev) => prev - 1);
   };
 
@@ -155,7 +183,7 @@ function AICoursePage() {
           <h1
             style={{
               fontSize: 18,
-              fontWeight: 700,
+              fontWeight: 600,
               marginBottom: 6,
               color: "#111827",
             }}
@@ -175,101 +203,194 @@ function AICoursePage() {
     );
   }
 
-  const progressText = `${step + 1} / ${questions.length}`;
+  const progressText =
+    step >= 0 ? `${step + 1} / ${questions.length}` : `0 / ${questions.length}`;
 
   return (
     <div style={{ padding: "30px" }}>
-      <h1 style={{ marginBottom: 10 }}>AI 맞춤 데이트 추천</h1>
-      <p style={{ marginBottom: 18, color: "#6b7280", fontSize: 13 }}>
-        질문에 답하면, 선택한 조건에 맞춰 AI가 코스를 추천해요. ({progressText})
-      </p>
+      <h1 style={{ marginBottom: 10, fontWeight: 600 }}>AI 데이트 코스 추천</h1>
 
-      <div
-        key={step}
-        className="ai-question-slide"
-        style={{
-          padding: "20px",
-          background: "#fafafa",
-          borderRadius: "16px",
-          border: "1px solid #eee",
-        }}
-      >
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-          <h2 style={{ margin: 0 }}>{current.question}</h2>
-          <button
-            onClick={handleBack}
-            disabled={step === 0}
-            style={{
-              padding: "8px 10px",
-              borderRadius: 10,
-              border: "1px solid #e5e7eb",
-              background: step === 0 ? "#f3f4f6" : "#fff",
-              color: step === 0 ? "#9ca3af" : "#111827",
-              cursor: step === 0 ? "not-allowed" : "pointer",
-              height: 36,
-              whiteSpace: "nowrap",
-            }}
-          >
-            ← 이전
-          </button>
-        </div>
+      {step === -1 ? (
+        <>
+          <p style={{ marginBottom: 18, color: "#6b7280", fontSize: 13 }}>
+            빠르게 <strong>랜덤 추천</strong>을 받거나, 질문에 답해서{" "}
+            <strong>맞춤 추천</strong>을 받을 수 있어요.
+          </p>
 
-        {/* ✅ chips UI (지역 선택) */}
-        {current.type === "chips" ? (
           <div
+            className="ai-question-slide"
             style={{
-              marginTop: 18,
-              display: "flex",
-              flexWrap: "wrap",
-              gap: 10,
+              padding: "20px",
+              background: "#fafafa",
+              borderRadius: "16px",
+              border: "1px solid #eee",
             }}
           >
-            {current.options.map((opt) => {
-              const selected = answers[current.key] === opt;
-              return (
-                <button
-                  key={opt}
-                  onClick={() => handleSelect(opt)}
-                  style={{
-                    padding: "10px 14px",
-                    borderRadius: 999,
-                    border: selected ? "1px solid #4f46e5" : "1px solid #e5e7eb",
-                    background: selected ? "#4f46e5" : "#fff",
-                    color: selected ? "#fff" : "#111827",
-                    fontSize: 14,
-                    cursor: "pointer",
-                  }}
-                >
-                  {opt}
-                </button>
-              );
-            })}
-          </div>
-        ) : (
-          // ✅ 기본 버튼 UI
-          <div style={{ marginTop: 18 }}>
-            {current.options.map((opt) => (
+            <h2 style={{ margin: 0, fontSize: 18, fontWeight: 600 }}>
+              오늘은 어떤 방식으로 추천받을까요?
+            </h2>
+            <p style={{ marginTop: 8, color: "#6b7280", fontSize: 13 }}>
+              랜덤은 지금 상황에 맞춰 AI가 알아서 골라줘요.
+            </p>
+
+            <div
+              style={{
+                marginTop: 16,
+                display: "flex",
+                flexDirection: "column",
+                gap: 10,
+              }}
+            >
               <button
-                key={opt}
-                onClick={() => handleSelect(opt)}
+                onClick={async () => {
+                  const ctx = makeRandomContext();
+                  setAnswers(ctx);
+                  await generateCourse(ctx);
+                }}
                 style={{
-                  display: "block",
                   width: "100%",
                   padding: "14px 18px",
-                  borderRadius: 12,
-                  marginBottom: 12,
-                  border: "1px solid #ddd",
-                  background: "white",
+                  borderRadius: 14,
+                  border: "1px solid #c7d2fe",
+                  background: "#4f46e5",
+                  color: "white",
                   fontSize: 16,
+                  fontWeight: 600,
                   cursor: "pointer",
                 }}
               >
-                {opt}
+                🎲 랜덤으로 바로 추천받기
               </button>
-            ))}
+
+              <button
+                onClick={() => setStep(0)}
+                style={{
+                  width: "100%",
+                  padding: "14px 18px",
+                  borderRadius: 14,
+                  border: "1px solid #e5e7eb",
+                  background: "white",
+                  color: "#111827",
+                  fontSize: 16,
+                  fontWeight: 600,
+                  cursor: "pointer",
+                }}
+              >
+                🧠 질문에 답하고 맞춤 추천받기
+              </button>
+            </div>
+
+            <div style={{ marginTop: 14, fontSize: 12, color: "#9ca3af" }}>
+              * 맞춤 추천은 {questions.length}개의 질문으로 구성돼요.
+            </div>
           </div>
-        )}
-      </div>
+        </>
+      ) : (
+        <>
+          <p style={{ marginBottom: 18, color: "#6b7280", fontSize: 13 }}>
+            질문에 답하면, 선택한 조건에 맞춰 AI가 코스를 추천해요. (
+            {progressText})
+          </p>
+
+          <div
+            key={step}
+            className="ai-question-slide"
+            style={{
+              padding: "20px",
+              background: "#fafafa",
+              borderRadius: "16px",
+              border: "1px solid #eee",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                gap: 12,
+              }}
+            >
+              <h2 style={{ margin: 0, fontWeight: 600 }}>{current?.question}</h2>
+              <button
+                onClick={handleBack}
+                disabled={step === -1}
+                style={{
+                  padding: "8px 10px",
+                  borderRadius: 10,
+                  border: "1px solid #e5e7eb",
+                  background: "#fff",
+                  color: "#111827",
+                  cursor: "pointer",
+                  height: 36,
+                  whiteSpace: "nowrap",
+                  fontWeight: 600,
+                }}
+              >
+                ← 이전
+              </button>
+            </div>
+
+            {/* ✅ chips UI (지역 선택) */}
+            {current?.type === "chips" ? (
+              <div
+                style={{
+                  marginTop: 18,
+                  display: "flex",
+                  flexWrap: "wrap",
+                  gap: 10,
+                }}
+              >
+                {current.options.map((opt) => {
+                  const selected = answers[current.key] === opt;
+                  return (
+                    <button
+                      key={opt}
+                      onClick={() => handleSelect(opt)}
+                      style={{
+                        padding: "10px 14px",
+                        borderRadius: 999,
+                        border: selected
+                          ? "1px solid #4f46e5"
+                          : "1px solid #e5e7eb",
+                        background: selected ? "#4f46e5" : "#fff",
+                        color: selected ? "#fff" : "#111827",
+                        fontSize: 14,
+                        cursor: "pointer",
+                        fontWeight: 600,
+                      }}
+                    >
+                      {opt}
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              // ✅ 기본 버튼 UI
+              <div style={{ marginTop: 18 }}>
+                {current?.options.map((opt) => (
+                  <button
+                    key={opt}
+                    onClick={() => handleSelect(opt)}
+                    style={{
+                      display: "block",
+                      width: "100%",
+                      padding: "14px 18px",
+                      borderRadius: 12,
+                      marginBottom: 12,
+                      border: "1px solid #ddd",
+                      background: "white",
+                      fontSize: 16,
+                      cursor: "pointer",
+                      fontWeight: 600,
+                    }}
+                  >
+                    {opt}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 }

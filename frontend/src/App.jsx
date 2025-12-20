@@ -54,9 +54,9 @@ function Layout() {
     window.location.href = "/";
   };
 
+  // ✅ 랜덤 탭만 제거 (라우트는 유지)
   const navItems = [
     { to: "/recommend", label: "추천 받기" },
-    { to: "/random", label: "랜덤 추천" },
     { to: "/ai-course", label: "AI 맞춤 코스" },
     { to: "/new", label: "코스 만들기" },
     { to: "/mypage", label: "마이페이지" },
@@ -64,7 +64,7 @@ function Layout() {
 
   const navClass = ({ isActive }) =>
     [
-      "inline-flex items-center justify-center rounded-full px-4 py-2 text-sm font-extrabold transition",
+      "inline-flex items-center justify-center rounded-full px-4 py-2 text-sm font-medium transition",
       "border shadow-sm backdrop-blur",
       isActive
         ? "bg-violet-600 text-white border-violet-300/40 shadow-[0_14px_30px_rgba(124,58,237,0.18)]"
@@ -90,7 +90,7 @@ function Layout() {
                 </div>
 
                 <div className="leading-tight">
-                  <div className="text-lg font-black tracking-tight text-slate-900">
+                  <div className="text-lg font-semibold tracking-tight text-slate-900">
                     Course More Us
                   </div>
                   <div className="text-xs font-semibold text-slate-500">
