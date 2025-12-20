@@ -4,6 +4,7 @@ import {
   Routes,
   Route,
   Link,
+  NavLink,
   Outlet,
   useNavigate,
 } from "react-router-dom";
@@ -23,7 +24,6 @@ import AICourseTestPage from "./AICourseTestPage.jsx";
 import AICoursePage from "./AICoursePage.jsx";
 import AICourseResult from "./AICourseResult.jsx";
 import AICourseDetail from "./AICourseDetail.jsx";
-
 
 const API_BASE_URL = "http://localhost:4000";
 
@@ -54,72 +54,102 @@ function Layout() {
     window.location.href = "/";
   };
 
+  const navItems = [
+    { to: "/recommend", label: "추천 받기" },
+    { to: "/random", label: "랜덤 추천" },
+    { to: "/ai-course", label: "AI 맞춤 코스" },
+    { to: "/new", label: "코스 만들기" },
+    { to: "/mypage", label: "마이페이지" },
+  ];
+
+  const navClass = ({ isActive }) =>
+    [
+      "inline-flex items-center justify-center rounded-full px-4 py-2 text-sm font-extrabold transition",
+      "border shadow-sm backdrop-blur",
+      isActive
+        ? "bg-violet-600 text-white border-violet-300/40 shadow-[0_14px_30px_rgba(124,58,237,0.18)]"
+        : "bg-white/70 text-slate-700 border-slate-200 hover:bg-white hover:border-slate-300",
+    ].join(" ");
+
   return (
-    <div className="app">
-      <header className="app-header">
-        <div className="app-inner">
-          <div className="header-top">
-            <div>
-              <h1 className="app-title">
-                <Link
-                  to="/"
-                  style={{
-                    textDecoration: "none",
-                    color: "inherit",
-                  }}
-                >Course More Us</Link></h1>
-              <p className="app-subtitle">데이트 코스 추천 & 기록 서비스 📝</p>
+    <div className="min-h-screen bg-[#fafafa]">
+      {/* ✅ 새 헤더 (홈 무드 통일) */}
+      <header className="sticky top-0 z-50">
+        <div className="bg-[#fafafa]/70 backdrop-blur">
+          <div className="pointer-events-none h-px w-full bg-gradient-to-r from-transparent via-violet-200/70 to-transparent" />
+
+          <div className="mx-auto max-w-6xl px-6">
+            <div className="flex flex-col gap-4 py-5 md:flex-row md:items-center md:justify-between">
+              {/* Brand */}
+              <Link to="/" className="group inline-flex items-center gap-3">
+                <div className="relative">
+                  <div className="absolute -inset-2 rounded-2xl bg-gradient-to-br from-violet-200/70 via-fuchsia-200/50 to-sky-200/50 blur-xl opacity-70 transition group-hover:opacity-90" />
+                  <div className="relative flex h-11 w-11 items-center justify-center rounded-2xl border border-slate-200/70 bg-white/70 shadow-sm">
+                    <span className="text-lg">✨</span>
+                  </div>
+                </div>
+
+                <div className="leading-tight">
+                  <div className="text-lg font-black tracking-tight text-slate-900">
+                    Course More Us
+                  </div>
+                  <div className="text-xs font-semibold text-slate-500">
+                    데이트 코스 추천 & 기록 서비스 📝
+                  </div>
+                </div>
+              </Link>
+
+              {/* Auth */}
+              <div className="flex items-center gap-2 md:justify-end">
+                {isLoggedIn ? (
+                  <>
+                    <span className="hidden md:inline text-xs font-semibold text-slate-600">
+                      {currentUser?.email} 님 👋
+                    </span>
+                    <button
+                      onClick={handleLogout}
+                      className="rounded-full border border-slate-200 bg-white/70 px-4 py-2 text-xs font-extrabold text-slate-700 shadow-sm hover:bg-white hover:border-slate-300"
+                    >
+                      로그아웃
+                    </button>
+                  </>
+                ) : (
+                  <Link
+                    to="/login"
+                    className="rounded-full border border-slate-200 bg-white/70 px-4 py-2 text-xs font-extrabold text-slate-700 shadow-sm hover:bg-white hover:border-slate-300"
+                  >
+                    로그인
+                  </Link>
+                )}
+              </div>
             </div>
 
-            <div className="auth-buttons">
+            {/* Nav */}
+            <nav className="flex flex-wrap gap-2 pb-4">
+              {navItems.map((it) => (
+                <NavLink key={it.to} to={it.to} className={navClass}>
+                  {it.label}
+                </NavLink>
+              ))}
+            </nav>
+
+            {/* Hint line */}
+            <div className="pb-5 text-xs font-semibold text-slate-500">
               {isLoggedIn ? (
-                <button
-                  className="btn btn-secondary btn-sm"
-                  onClick={handleLogout}
-                >
-                  로그아웃
-                </button>
+                <span>저장/찜한 코스는 마이페이지에서 바로 확인할 수 있어요.</span>
               ) : (
-                <Link to="/login" className="btn btn-secondary btn-sm">
-                  로그인
-                </Link>
+                <span>로그인하면 코스를 저장하고 찜할 수 있어요.</span>
               )}
             </div>
           </div>
 
-          {/* 상단 네비게이션 바 */}
-          <nav className="app-nav">
-            <Link to="/" className="tab">
-              전체 코스
-            </Link>
-            <Link to="/recommend" className="tab">
-              추천 받기
-            </Link>
-            <Link to="/ai-course" className="tab">
-              AI 맞춤 코스
-            </Link>
-            <Link to="/new" className="tab">
-              코스 만들기
-            </Link>
-            <Link to="/mypage" className="tab">
-              마이페이지
-            </Link>
-          </nav>
-
-          <div style={{ marginTop: 4, fontSize: 13 }}>
-            {isLoggedIn ? (
-              <span>{currentUser?.email} 님, 환영해요 👋</span>
-            ) : (
-              <span>로그인하면 코스를 저장하고 관리할 수 있어요.</span>
-            )}
-          </div>
+          <div className="h-px w-full bg-slate-200/70" />
         </div>
       </header>
 
-      <main className="app-main">
-        <div className="app-inner">
-          <Outlet />
-        </div>
+      {/* ✅ 메인 컨텐츠 */}
+      <main className="mx-auto max-w-6xl px-6 py-10">
+        <Outlet />
       </main>
     </div>
   );
@@ -232,13 +262,10 @@ function CourseListPage() {
     }
 
     try {
-      const res = await fetch(
-        `${API_BASE_URL}/api/courses/${courseId}/like`,
-        {
-          method: "POST",
-          headers: { Authorization: `Bearer ${token}` },
-        }
-      );
+      const res = await fetch(`${API_BASE_URL}/api/courses/${courseId}/like`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
 
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.message || "찜 처리 실패");
@@ -250,9 +277,7 @@ function CourseListPage() {
           return [...prev, idStr];
         });
       } else {
-        setLikedIds((prev) =>
-          prev.filter((cid) => cid !== String(courseId))
-        );
+        setLikedIds((prev) => prev.filter((cid) => cid !== String(courseId)));
       }
     } catch (err) {
       console.error("toggle like error:", err);
@@ -274,9 +299,7 @@ function CourseListPage() {
         style={{ marginBottom: 12 }}
       />
 
-      {(loading || loadingLikes) && (
-        <p className="text-muted">불러오는 중...</p>
-      )}
+      {(loading || loadingLikes) && <p className="text-muted">불러오는 중...</p>}
 
       {courses.length === 0 ? (
         <p className="text-muted">저장된 코스가 없어요.</p>
@@ -286,12 +309,10 @@ function CourseListPage() {
         <ul className="course-list">
           {filteredCourses.map((course) => {
             const regionLabel = getRegionLabel(course.city);
-            const hasSteps =
-              Array.isArray(course.steps) && course.steps.length > 0;
+            const hasSteps = Array.isArray(course.steps) && course.steps.length > 0;
             const firstStep = hasSteps ? course.steps[0] : null;
 
-            const isOwner =
-              currentUserId && currentUserId === String(course.owner);
+            const isOwner = currentUserId && currentUserId === String(course.owner);
             const isLiked = likedIds.includes(String(course._id));
 
             return (
@@ -304,10 +325,7 @@ function CourseListPage() {
                     marginBottom: 6,
                   }}
                 >
-                  <h3
-                    className="course-title"
-                    style={{ margin: 0, fontSize: 20 }}
-                  >
+                  <h3 className="course-title" style={{ margin: 0, fontSize: 20 }}>
                     {course.title}
                   </h3>
 
@@ -324,9 +342,7 @@ function CourseListPage() {
 
                 <p style={{ color: "#666", marginBottom: 8, fontSize: 13 }}>
                   📍 {regionLabel} ·{" "}
-                  {hasSteps
-                    ? `총 ${course.steps.length}단계 코스`
-                    : "단계 정보 없음"}
+                  {hasSteps ? `총 ${course.steps.length}단계 코스` : "단계 정보 없음"}
                 </p>
 
                 {firstStep && (
@@ -335,14 +351,8 @@ function CourseListPage() {
                   </p>
                 )}
 
-                <div
-                  className="course-actions"
-                  style={{ display: "flex", gap: 8, marginTop: 4 }}
-                >
-                  <Link
-                    to={`/courses/${course._id}`}
-                    className="btn btn-secondary btn-sm"
-                  >
+                <div className="course-actions" style={{ display: "flex", gap: 8, marginTop: 4 }}>
+                  <Link to={`/courses/${course._id}`} className="btn btn-secondary btn-sm">
                     상세 보기
                   </Link>
 
@@ -384,10 +394,9 @@ function NewCoursePage() {
   const [title, setTitle] = useState("");
   const [cityId, setCityId] = useState(SEOUL_REGIONS[0].id);
 
-  // 새 필드
   const [mood, setMood] = useState("");
-  const [heroImageFile, setHeroImageFile] = useState(null); // 파일 업로드용
-  const [heroImageUrl, setHeroImageUrl] = useState("");     // 직접 URL 입력용
+  const [heroImageFile, setHeroImageFile] = useState(null);
+  const [heroImageUrl, setHeroImageUrl] = useState("");
 
   const [steps, setSteps] = useState([
     { title: "1단계", place: "", memo: "", time: "", budget: "" },
@@ -398,18 +407,13 @@ function NewCoursePage() {
   const [error, setError] = useState("");
 
   const handleStepChange = (index, field, value) => {
-    setSteps((prev) =>
-      prev.map((s, i) => (i === index ? { ...s, [field]: value } : s))
-    );
+    setSteps((prev) => prev.map((s, i) => (i === index ? { ...s, [field]: value } : s)));
   };
 
   const addStep = () => {
     if (steps.length >= 4) return;
     const next = steps.length + 1;
-    setSteps((prev) => [
-      ...prev,
-      { title: `${next}단계`, place: "", memo: "", time: "", budget: "" },
-    ]);
+    setSteps((prev) => [...prev, { title: `${next}단계`, place: "", memo: "", time: "", budget: "" }]);
   };
 
   const removeStep = (idx) => {
@@ -417,7 +421,6 @@ function NewCoursePage() {
     setSteps((prev) => prev.filter((_, i) => i !== idx));
   };
 
-  /* ===================== 제출 ===================== */
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
@@ -443,25 +446,21 @@ function NewCoursePage() {
 
     setLoading(true);
 
-    /* ---------- 1) 이미지 파일 업로드 ---------- */
-    let finalImageUrl = heroImageUrl.trim() || null; // URL이 있으면 그걸 우선
+    let finalImageUrl = heroImageUrl.trim() || null;
 
     if (!finalImageUrl && heroImageFile) {
       try {
         const formData = new FormData();
         formData.append("image", heroImageFile);
 
-        const uploadRes = await fetch(
-          `${API_BASE_URL}/api/upload/image`,
-          {
-            method: "POST",
-            body: formData,
-          }
-        );
+        const uploadRes = await fetch(`${API_BASE_URL}/api/upload/image`, {
+          method: "POST",
+          body: formData,
+        });
 
         const uploadData = await uploadRes.json().catch(() => ({}));
         if (uploadRes.ok && uploadData.url) {
-          finalImageUrl = uploadData.url; // 예: "/uploads/xxxx.jpg"
+          finalImageUrl = uploadData.url;
         } else {
           console.error("이미지 업로드 실패:", uploadData);
         }
@@ -470,7 +469,6 @@ function NewCoursePage() {
       }
     }
 
-    /* ---------- 2) 코스 데이터 저장 ---------- */
     try {
       const res = await fetch(`${API_BASE_URL}/api/courses`, {
         method: "POST",
@@ -488,13 +486,11 @@ function NewCoursePage() {
       });
 
       const data = await res.json().catch(() => ({}));
-
       if (!res.ok) throw new Error(data.message || "코스 등록 실패");
 
       alert("코스가 등록되었습니다!");
       navigate("/");
 
-      // 폼 초기화
       setTitle("");
       setCityId(SEOUL_REGIONS[0].id);
       setMood("");
@@ -519,7 +515,6 @@ function NewCoursePage() {
       {error && <div className="alert alert-error">{error}</div>}
 
       <form className="course-form" onSubmit={handleSubmit}>
-        {/* 제목 */}
         <input
           className="input"
           placeholder="코스 제목 (예: 홍대 감성 데이트)"
@@ -530,7 +525,6 @@ function NewCoursePage() {
           style={{ marginBottom: 12 }}
         />
 
-        {/* 지역 + 분위기 */}
         <div style={{ display: "flex", gap: 8 }}>
           <select
             className="input"
@@ -559,11 +553,8 @@ function NewCoursePage() {
           </select>
         </div>
 
-        {/* 파일 업로드 */}
         <div style={{ marginTop: 12 }}>
-          <label style={{ fontSize: 13, fontWeight: 600 }}>
-            대표 이미지 업로드 (선택)
-          </label>
+          <label style={{ fontSize: 13, fontWeight: 600 }}>대표 이미지 업로드 (선택)</label>
           <input
             type="file"
             accept="image/*"
@@ -576,7 +567,6 @@ function NewCoursePage() {
           </p>
         </div>
 
-        {/* URL 직접 입력 */}
         <div style={{ marginTop: 8 }}>
           <input
             className="input"
@@ -590,25 +580,12 @@ function NewCoursePage() {
           </p>
         </div>
 
-        {/* 단계 안내 */}
-        <div
-          style={{
-            marginTop: 16,
-            marginBottom: 8,
-            fontSize: 13,
-            color: "#666",
-          }}
-        >
+        <div style={{ marginTop: 16, marginBottom: 8, fontSize: 13, color: "#666" }}>
           데이트 코스를 2–4단계로 작성해 주세요. (최대 4단계)
         </div>
 
-        {/* 단계들 */}
         {steps.map((step, i) => (
-          <div
-            key={i}
-            className="card"
-            style={{ padding: 12, marginBottom: 8 }}
-          >
+          <div key={i} className="card" style={{ padding: 12, marginBottom: 8 }}>
             <div
               style={{
                 display: "flex",
@@ -633,9 +610,7 @@ function NewCoursePage() {
               className="input"
               placeholder="장소 이름 (예: ○○카페)"
               value={step.place}
-              onChange={(e) =>
-                handleStepChange(i, "place", e.target.value)
-              }
+              onChange={(e) => handleStepChange(i, "place", e.target.value)}
               required={i === 0}
             />
 
@@ -643,9 +618,7 @@ function NewCoursePage() {
               className="input"
               placeholder="시간 (예: 14:00)"
               value={step.time}
-              onChange={(e) =>
-                handleStepChange(i, "time", e.target.value)
-              }
+              onChange={(e) => handleStepChange(i, "time", e.target.value)}
               style={{ marginTop: 6 }}
             />
 
@@ -653,9 +626,7 @@ function NewCoursePage() {
               className="input"
               placeholder="예산 (원, 선택)"
               value={step.budget}
-              onChange={(e) =>
-                handleStepChange(i, "budget", e.target.value)
-              }
+              onChange={(e) => handleStepChange(i, "budget", e.target.value)}
               style={{ marginTop: 6 }}
             />
 
@@ -663,9 +634,7 @@ function NewCoursePage() {
               className="textarea"
               placeholder="메모 (이 코스에 대한 간단한 설명)"
               value={step.memo}
-              onChange={(e) =>
-                handleStepChange(i, "memo", e.target.value)
-              }
+              onChange={(e) => handleStepChange(i, "memo", e.target.value)}
               rows={2}
               style={{ marginTop: 6 }}
             />
@@ -679,21 +648,11 @@ function NewCoursePage() {
           disabled={steps.length >= 4 || !isLoggedIn}
           style={{ marginTop: 4, marginBottom: 12 }}
         >
-          {steps.length >= 4
-            ? "최대 4단계까지 추가 가능"
-            : "단계 추가하기"}
+          {steps.length >= 4 ? "최대 4단계까지 추가 가능" : "단계 추가하기"}
         </button>
 
-        <button
-          className="btn btn-primary"
-          type="submit"
-          disabled={loading || !isLoggedIn}
-        >
-          {isLoggedIn
-            ? loading
-              ? "저장 중..."
-              : "코스 등록하기"
-            : "로그인 후 등록 가능"}
+        <button className="btn btn-primary" type="submit" disabled={loading || !isLoggedIn}>
+          {isLoggedIn ? (loading ? "저장 중..." : "코스 등록하기") : "로그인 후 등록 가능"}
         </button>
       </form>
     </section>
@@ -706,7 +665,7 @@ function App() {
     <Routes>
       {/* 공통 레이아웃 */}
       <Route path="/" element={<Layout />}>
-        {/* 첫 화면 - 랜딩 홈 */}
+        {/* ✅ 홈(랜딩) */}
         <Route index element={<HomePage />} />
 
         {/* 코스 등록 */}
@@ -725,14 +684,15 @@ function App() {
         <Route path="recommend" element={<RecommendPage />} />
         <Route path="random" element={<RandomPage />} />
         <Route path="ai-test" element={<AICourseTestPage />} />
-        {/*ai 관련*/}
+
+        {/* ai 관련 */}
         <Route path="ai-course" element={<AICoursePage />} />
         <Route path="ai-course/result" element={<AICourseResult />} />
         <Route path="ai-course/detail" element={<AICourseDetail />} />
-         {/* 🔥 관리자 페이지 */}
+
+        {/* 🔥 관리자 페이지 */}
         <Route path="admin/courses" element={<AdminCoursesPage />} />
       </Route>
-
 
       {/* 로그인은 레이아웃 없이 단독 페이지 */}
       <Route path="/login" element={<LoginPage />} />
