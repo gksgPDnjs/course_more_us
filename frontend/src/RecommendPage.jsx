@@ -3,8 +3,6 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { SEOUL_REGIONS } from "./data/regions";
 import CourseCard from "./CourseCard";
-import { buildUnsplashKeyword } from "./api/unsplashKeyword";
-import { fetchUnsplashImage } from "./api/unsplash";
 
 const API_BASE_URL = "http://localhost:4000";
 
@@ -16,6 +14,25 @@ function resolveImageUrl(raw) {
     return `${API_BASE_URL}${raw}`;
   }
   return raw;
+}
+
+// ✅ 카카오 이미지 프록시(백엔드)로 썸네일 1장 받아오기
+async function fetchKakaoImageUrl(query) {
+  const q = String(query || "").trim();
+  if (!q) return null;
+
+  try {
+    const params = new URLSearchParams({ query: q });
+    const res = await fetch(
+      `${API_BASE_URL}/api/kakao/image?${params.toString()}`
+    );
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) return null;
+    return data.imageUrl || null;
+  } catch (e) {
+    console.warn("fetchKakaoImageUrl failed:", e);
+    return null;
+  }
 }
 
 /* ---------------- 공통 유틸 / 간단 auth 훅 ---------------- */
@@ -67,12 +84,12 @@ function RecommendPage() {
   const [likedIds, setLikedIds] = useState([]);
   const [loadingLikes, setLoadingLikes] = useState(false);
 
-  // ⬇ 유저 코스 카드 썸네일 이미지 (Unsplash)
-  const [cardImages, setCardImages] = useState({});
-
-  // ⬇ 자동 코스 카드 썸네일 이미지 (Unsplash)
-  const [autoCardImages, setAutoCardImages] = useState({});
+  // ✅ 자동 생성 코스(프론트에서 조합)
   const [autoCourses, setAutoCourses] = useState([]);
+
+  // ✅ 카드 썸네일 캐시 (이제 Kakao 이미지 캐시로 사용)
+  const [cardImages, setCardImages] = useState({});
+  const [autoCardImages, setAutoCardImages] = useState({});
 
   // --- 코스 목록 ---
   useEffect(() => {
@@ -86,9 +103,9 @@ function RecommendPage() {
 
         if (!res.ok) {
           throw new Error(data?.message || "코스 목록 조회 실패");
-        }   
+        }
 
-        //여기서 approved === true인 코스만 남김 (승인된 코스만 필터링)
+        // approved === true인 코스만 + auto 제외
         const approvedCourses = Array.isArray(data)
           ? data.filter((c) => c.approved === true && c.sourceType !== "auto")
           : [];
@@ -96,9 +113,7 @@ function RecommendPage() {
         setCourses(approvedCourses);
       } catch (err) {
         console.error(err);
-        setCoursesError(
-          err.message || "코스를 불러오는 중 오류가 발생했어요."
-        );
+        setCoursesError(err.message || "코스를 불러오는 중 오류가 발생했어요.");
       } finally {
         setLoadingCourses(false);
       }
@@ -108,43 +123,56 @@ function RecommendPage() {
   }, []);
 
   // --- 내가 찜한 코스 id 목록 ---
-  useEffect(() => {
-    if (!isLoggedIn) {
-      setLikedIds([]);
-      return;
-    }
+// --- 내가 찜한 코스 id 목록 ---
+useEffect(() => {
+  if (!isLoggedIn) {
+    setLikedIds([]);
+    return;
+  }
 
-    const fetchLiked = async () => {
-      try {
-        setLoadingLikes(true);
-        const res = await fetch(`${API_BASE_URL}/api/courses/liked/me`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        const data = await res.json().catch(() => []);
+  const fetchLiked = async () => {
+    try {
+      setLoadingLikes(true);
 
-        if (!res.ok) {
-          throw new Error(data?.message || "찜한 코스 목록 조회 실패");
-        }
+      const res = await fetch(`${API_BASE_URL}/api/courses/liked/me`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
 
-        const ids = Array.isArray(data) ? data.map((c) => String(c._id)) : [];
-        setLikedIds(ids);
-      } catch (err) {
-        console.error("fetchLiked (recommend) error:", err);
-      } finally {
-        setLoadingLikes(false);
+      // ✅ 401은 서버다운이 아니라 토큰 문제
+      if (res.status === 401) {
+        console.warn("liked/me 401: token invalid/expired");
+        setLikedIds([]);
+        return;
       }
-    };
 
-    fetchLiked();
-  }, [isLoggedIn, token]);
+      const data = await res.json().catch(() => []);
 
+      if (!res.ok) {
+        console.error("liked/me error:", res.status, data);
+        setLikedIds([]);
+        return;
+      }
+
+      const ids = Array.isArray(data) ? data.map((c) => String(c._id)) : [];
+      setLikedIds(ids);
+    } catch (err) {
+      console.error("fetchLiked network error:", err);
+      setLikedIds([]);
+    } finally {
+      setLoadingLikes(false);
+    }
+  };
+
+  fetchLiked();
+}, [isLoggedIn, token]);
   const filteredCourses =
     selectedRegionId === "all"
       ? courses
       : courses.filter((c) => c.city === selectedRegionId);
 
   /* --------------------------------------
-   * 🔥 1) 유저 코스 리스트용 Unsplash 대표 이미지 로딩
+   * ✅ 1) 유저 코스 리스트용 Kakao 이미지 로딩
+   * - 서버 업로드 이미지가 없을 때만 프록시로 1장 가져와서 캐싱
    -------------------------------------- */
   useEffect(() => {
     if (!filteredCourses || filteredCourses.length === 0) return;
@@ -155,22 +183,19 @@ function RecommendPage() {
       const updates = {};
 
       for (const course of targets) {
-        // 이미 서버에 이미지가 있으면 패스
+        // 서버에 업로드/저장된 이미지가 있으면 패스
         if (course.heroImageUrl || course.imageUrl || course.thumbnailUrl) {
           continue;
         }
         // 이미 캐시에 있으면 패스
         if (cardImages[course._id]) continue;
 
-        try {
-          const keyword = buildUnsplashKeyword(course);
-          const url = await fetchUnsplashImage(keyword);
-          if (url) {
-            updates[course._id] = url;
-          }
-        } catch (e) {
-          console.warn("RecommendPage Unsplash 실패 (user):", course.title, e);
-        }
+        // ✅ 검색어: 지역 + 코스제목 우선
+        const regionLabel = getRegionLabel(course.city);
+        const q = `${regionLabel || "서울"} ${course.title || "데이트"}`.trim();
+
+        const url = await fetchKakaoImageUrl(q);
+        if (url) updates[course._id] = url;
       }
 
       if (Object.keys(updates).length > 0) {
@@ -180,10 +205,11 @@ function RecommendPage() {
 
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filteredCourses]); // cardImages는 deps에서 제외 (일부러)
+  }, [filteredCourses]);
 
   /* --------------------------------------
-   * 🔥 2) 자동 코스 리스트용 Unsplash 대표 이미지 로딩
+   * ✅ 2) 자동 코스 리스트용 Kakao 이미지 로딩
+   * - 자동 생성 코스는 steps[0] 장소명 기반으로 이미지 검색
    -------------------------------------- */
   useEffect(() => {
     if (!autoCourses || autoCourses.length === 0) return;
@@ -195,25 +221,22 @@ function RecommendPage() {
 
       for (const course of targets) {
         if (!course.id) continue;
-        // 이미 캐시에 있으면 패스
         if (autoCardImages[course.id]) continue;
 
-        try {
-          const keyword = buildUnsplashKeyword({
-            ...course,
-            city: course.regionId, // regionId를 city로 매핑
-          });
-          const url = await fetchUnsplashImage(keyword);
-          if (url) {
-            updates[course.id] = url;
-          }
-        } catch (e) {
-          console.warn(
-            "RecommendPage Unsplash 실패 (auto):",
-            course.title,
-            e
-          );
-        }
+        // course.heroImageUrl 있으면 굳이 캐시 안 해도 됨
+        if (course.heroImageUrl) continue;
+
+        const first = course.steps?.[0]?.place || course.steps?.[0] || null;
+        const placeName = first?.place_name || first?.name || "";
+        const regionLabel = getRegionLabel(course.regionId);
+
+        const q = (placeName
+          ? `${placeName} ${regionLabel || "서울"}`
+          : `${regionLabel || "서울"} 데이트 코스`
+        ).trim();
+
+        const url = await fetchKakaoImageUrl(q);
+        if (url) updates[course.id] = url;
       }
 
       if (Object.keys(updates).length > 0) {
@@ -223,7 +246,7 @@ function RecommendPage() {
 
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoCourses]); // autoCardImages는 deps에서 제외
+  }, [autoCourses]);
 
   // 💜 리스트에서 바로 찜 토글
   const handleToggleLike = async (courseId) => {
@@ -233,13 +256,10 @@ function RecommendPage() {
     }
 
     try {
-      const res = await fetch(
-        `${API_BASE_URL}/api/courses/${courseId}/like`,
-        {
-          method: "POST",
-          headers: { Authorization: `Bearer ${token}` },
-        }
-      );
+      const res = await fetch(`${API_BASE_URL}/api/courses/${courseId}/like`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
 
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.message || "찜 처리 실패");
@@ -247,9 +267,7 @@ function RecommendPage() {
       const idStr = String(courseId);
 
       if (data.liked) {
-        setLikedIds((prev) =>
-          prev.includes(idStr) ? prev : [...prev, idStr]
-        );
+        setLikedIds((prev) => (prev.includes(idStr) ? prev : [...prev, idStr]));
       } else {
         setLikedIds((prev) => prev.filter((cid) => cid !== idStr));
       }
@@ -312,11 +330,7 @@ function RecommendPage() {
     const { x, y } = region.center || {};
     const blacklistRegex = /(스터디|독서실|학원|공부|독학|고시원)/i;
 
-    const keywords = [
-      `${baseName} 맛집`,
-      `${baseName} 카페`,
-      `${baseName} 데이트 스팟`,
-    ];
+    const keywords = [`${baseName} 맛집`, `${baseName} 카페`, `${baseName} 데이트 스팟`];
 
     try {
       setKakaoLoading(true);
@@ -359,7 +373,6 @@ function RecommendPage() {
   };
 
   // -------------------- 3. 좌표 기반 키워드 검색 (자동 코스용) --------------------
-    // -------------------- 3. 좌표 기반 키워드 검색 (자동 코스용) ------------------
 
   // 공통 필터 정규식
   const PLACE_BLACKLIST = /(스터디|독서실|학원|공부|독학|고시원)/i;
@@ -371,20 +384,14 @@ function RecommendPage() {
     if (!docs || docs.length === 0) return [];
 
     // 1) 스터디/독서실 같은 곳 제거
-    let filtered = docs.filter(
-      (p) => !PLACE_BLACKLIST.test(p.place_name || "")
-    );
+    let filtered = docs.filter((p) => !PLACE_BLACKLIST.test(p.place_name || ""));
 
     // 2) 카페/맛집에 따라 추가 필터
     if (keyword.includes("카페")) {
-      const onlyCafe = filtered.filter((p) =>
-        CAFE_REGEX.test(p.place_name || "")
-      );
+      const onlyCafe = filtered.filter((p) => CAFE_REGEX.test(p.place_name || ""));
       if (onlyCafe.length > 0) filtered = onlyCafe;
     } else if (keyword.includes("맛집")) {
-      const onlyFood = filtered.filter(
-        (p) => !NOT_CAFE_REGEX.test(p.place_name || "")
-      );
+      const onlyFood = filtered.filter((p) => !NOT_CAFE_REGEX.test(p.place_name || ""));
       if (onlyFood.length > 0) filtered = onlyFood;
     }
 
@@ -398,7 +405,12 @@ function RecommendPage() {
    * center(x,y) 기준 + radius(m) 안에서 keyword로 장소 하나 랜덤 선택
    * - center가 없으면 키워드만으로 검색
    */
-  async function searchByCategoryWithCenter(center, keyword, radius = 5000, size = 15) {
+  async function searchByCategoryWithCenter(
+    center,
+    keyword,
+    radius = 5000,
+    size = 15
+  ) {
     const { x, y } = center || {};
 
     const docs = await callKakaoSearch({
@@ -451,15 +463,10 @@ function RecommendPage() {
 
       // 만약 근처에서 못 찾으면, 다시 지역 중심 5km로 fallback
       if (!food) {
-        food = await searchByCategoryWithCenter(
-          region.center,
-          `${baseName} 맛집`,
-          5000
-        );
+        food = await searchByCategoryWithCenter(region.center, `${baseName} 맛집`, 5000);
       }
 
       // 3️⃣ 3단계: 2단계(밥집) 기준 2km 안에서 볼거리 찾기
-      // (밥집이 없으면 일단 카페 기준 또는 지역 기준으로 fallback)
       let spotCenter;
       if (food && food.x && food.y) {
         spotCenter = { x: food.x, y: food.y };
@@ -477,11 +484,7 @@ function RecommendPage() {
 
       // 그래도 없으면 지역 기준 5km로 한 번 더 시도
       if (!spot) {
-        spot = await searchByCategoryWithCenter(
-          region.center,
-          `${baseName} 데이트 코스`,
-          5000
-        );
+        spot = await searchByCategoryWithCenter(region.center, `${baseName} 데이트 코스`, 5000);
       }
 
       const steps = [
@@ -503,7 +506,19 @@ function RecommendPage() {
         regionId,
         createdAt: new Date().toISOString(),
         steps,
+        heroImageUrl: null, // ✅ 카드 썸네일용 (가능하면 붙임)
       };
+
+      // ✅ 자동 코스 카드 썸네일: 1단계 장소명으로 이미지 1장 붙이기(가능하면)
+      const firstPlaceName = steps?.[0]?.place?.place_name || "";
+      const thumbQuery = firstPlaceName
+        ? `${firstPlaceName} ${region.label}`
+        : `${region.label} 데이트 코스`;
+
+      const heroImageUrl = await fetchKakaoImageUrl(thumbQuery);
+      if (heroImageUrl) {
+        course.heroImageUrl = heroImageUrl;
+      }
 
       console.log("✨ 자동 코스 생성 결과:", course);
       setAutoCourses((prev) => [course, ...prev]);
@@ -512,8 +527,6 @@ function RecommendPage() {
       alert(err.message || "자동 코스를 만드는 중 오류가 발생했어요.");
     }
   };
-
-  
 
   // -------------------- 5. JSX --------------------
   return (
@@ -541,9 +554,7 @@ function RecommendPage() {
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
           <button
             type="button"
-            className={`region-btn ${
-              selectedRegionId === "all" ? "selected" : ""
-            }`}
+            className={`region-btn ${selectedRegionId === "all" ? "selected" : ""}`}
             onClick={() => {
               setSelectedRegionId("all");
               setKakaoPlaces([]);
@@ -557,9 +568,7 @@ function RecommendPage() {
             <button
               key={region.id}
               type="button"
-              className={`region-btn ${
-                selectedRegionId === region.id ? "selected" : ""
-              }`}
+              className={`region-btn ${selectedRegionId === region.id ? "selected" : ""}`}
               onClick={() => {
                 setSelectedRegionId(region.id);
                 setKakaoPlaces([]);
@@ -571,13 +580,7 @@ function RecommendPage() {
           ))}
         </div>
 
-        <p
-          style={{
-            marginTop: 4,
-            fontSize: 12,
-            color: "#6b7280",
-          }}
-        >
+        <p style={{ marginTop: 4, fontSize: 12, color: "#6b7280" }}>
           * 서울 전체를 선택하면 모든 지역의 코스를 함께 보여줘요. 특정 지역을
           선택하면 그 지역에 맞는 추천만 볼 수 있어요.
         </p>
@@ -656,6 +659,8 @@ function RecommendPage() {
                         course.thumbnailUrl ||
                         null
                     );
+
+                    // ✅ 업로드/저장 이미지 우선, 없으면 카카오 프록시 캐시
                     const finalImgUrl =
                       manualImageUrl || cardImages[course._id] || null;
 
@@ -669,11 +674,7 @@ function RecommendPage() {
                         regionLabel={regionLabel}
                         stepsCount={hasSteps ? course.steps.length : 0}
                         likesCount={likes}
-                        firstStep={
-                          firstStep?.place ||
-                          firstStep?.title ||
-                          firstStep?.name
-                        }
+                        firstStep={firstStep?.place || firstStep?.title || firstStep?.name}
                         isLiked={isLiked}
                         onToggleLike={() => handleToggleLike(course._id)}
                       />
@@ -724,7 +725,7 @@ function RecommendPage() {
                   key={course.id || index}
                   course={course}
                   index={index}
-                  imageUrl={autoCardImages[course.id] || null}
+                  imageUrl={course.heroImageUrl || autoCardImages[course.id] || null}
                 />
               ))}
             </ul>
@@ -780,26 +781,14 @@ function RecommendPage() {
                   <h4 style={{ fontSize: 15, marginBottom: 4 }}>
                     {place.place_name}
                   </h4>
-                  <p
-                    style={{
-                      fontSize: 13,
-                      color: "#6b7280",
-                      marginBottom: 4,
-                    }}
-                  >
+                  <p style={{ fontSize: 13, color: "#6b7280", marginBottom: 4 }}>
                     📍{" "}
                     {place.road_address_name ||
                       place.address_name ||
                       "주소 정보 없음"}
                   </p>
                   {place.phone && (
-                    <p
-                      style={{
-                        fontSize: 12,
-                        color: "#6b7280",
-                        marginBottom: 4,
-                      }}
-                    >
+                    <p style={{ fontSize: 12, color: "#6b7280", marginBottom: 4 }}>
                       ☎ {place.phone}
                     </p>
                   )}
@@ -849,10 +838,7 @@ function AutoCourseCard({ course, index, imageUrl }) {
   const firstStep = course.steps?.[0];
   const placeObj = firstStep?.place || firstStep || {};
   const firstName =
-    placeObj.place_name ||
-    placeObj.name ||
-    firstStep?.label ||
-    "첫 단계 정보 없음";
+    placeObj.place_name || placeObj.name || firstStep?.label || "첫 단계 정보 없음";
 
   const stepsCount = course.steps?.length || 0;
 
@@ -879,10 +865,7 @@ function AutoCourseCard({ course, index, imageUrl }) {
                 />
               ) : null}
 
-              {/* 이미지가 없어도 보이는 그라디언트 배경 */}
-              {!imageUrl && (
-                <div className="course-card-image-placeholder" />
-              )}
+              {!imageUrl && <div className="course-card-image-placeholder" />}
 
               <span className="course-card-mood-badge">자동 생성</span>
             </div>
@@ -890,20 +873,13 @@ function AutoCourseCard({ course, index, imageUrl }) {
 
           {/* 내용 영역 */}
           <div className="course-card-body">
-            <p className="course-card-meta-small">
-              자동 추천 코스 #{index + 1}
-            </p>
-
+            <p className="course-card-meta-small">자동 추천 코스 #{index + 1}</p>
             <h4 className="course-card-title">{course.title}</h4>
 
-            {firstName && (
-              <p className="course-card-firststep">1단계: {firstName}</p>
-            )}
+            {firstName && <p className="course-card-firststep">1단계: {firstName}</p>}
 
             <div className="course-card-footer">
-              <span className="course-card-footer-meta">
-                {stepsCount}단계 코스
-              </span>
+              <span className="course-card-footer-meta">{stepsCount}단계 코스</span>
             </div>
           </div>
         </article>

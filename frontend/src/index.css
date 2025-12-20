@@ -1891,3 +1891,413 @@ body {
   transform: translateY(0);
   box-shadow: 0 4px 10px rgba(15, 23, 42, 0.18);
 }
+/* =========================
+   AI 질문 슬라이드 애니메이션
+   ========================= */
+.ai-question-slide {
+  animation: aiSlideIn 220ms ease-out;
+}
+
+@keyframes aiSlideIn {
+  from { transform: translateY(10px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+/* 버튼 선택 효과 */
+.ai-option-btn {
+  transition: transform 120ms ease, box-shadow 160ms ease, border-color 160ms ease;
+}
+
+.ai-option-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 14px 30px rgba(15, 23, 42, 0.10);
+}
+
+.ai-option-btn:active {
+  transform: translateY(0);
+}
+
+/* =========================
+   AI 생성 로딩(스피너)
+   ========================= */
+.ai-generating {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.ai-generating-spinner {
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  border: 3px solid rgba(79, 70, 229, 0.2);
+  border-top-color: rgba(79, 70, 229, 0.95);
+  animation: aiSpin 0.8s linear infinite;
+}
+
+@keyframes aiSpin {
+  to { transform: rotate(360deg); }
+}
+
+.ai-generating-text {
+  font-size: 13px;
+  color: #6b7280;
+}
+.step-photo {
+  width: 100%;
+  aspect-ratio: 16 / 9;     /* 카드 사진은 항상 같은 비율 */
+  border-radius: 14px;
+  overflow: hidden;
+  background: #e5e7eb;
+  margin-top: 8px;
+  margin-bottom: 8px;
+}
+
+.step-photo-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;        /* 세로든 가로든 예쁘게 채움 */
+  object-position: center;
+  display: block;
+}
+/* 상단 히어로 레이아웃이 커지지 않게 */
+.auto-detail-hero {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr; /* 왼쪽 이미지 / 오른쪽 설명 */
+  gap: 18px;
+  align-items: stretch;
+}
+
+/* ✅ 여기서 높이를 고정해버리면 세로사진이어도 카드가 안 커짐 */
+.auto-detail-hero-image-wrap {
+  height: 360px;          /* ← 280~360 사이로 취향대로 */
+  border-radius: 22px;
+  overflow: hidden;
+  position: relative;
+  background: #e5e7eb;
+}
+
+/* ✅ 세로사진/가로사진 상관없이 예쁘게 채움 */
+.auto-detail-hero-image {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+  object-position: center;
+}
+@media (max-width: 900px) {
+  .auto-detail-hero {
+    grid-template-columns: 1fr;
+  }
+
+  .auto-detail-hero-image-wrap {
+    height: 240px;
+  }
+}
+.step-photo {
+  width: 100%;
+  height: 160px;       /* 고정 높이 */
+  border-radius: 14px;
+  overflow: hidden;
+  margin: 8px 0;
+  background: #e5e7eb;
+}
+
+.step-photo img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+  object-position: center;
+}
+.heroMedia {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: 24px;
+  overflow: hidden;
+  background: #e5e7eb;
+  position: relative;
+}
+
+.heroMedia img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  display: block;
+
+  /* 🔥 핵심: 과도하게 선명도 망가지는 거 완화 */
+  image-rendering: auto;
+}
+/* ===== Auth Page ===== */
+.auth-page {
+  min-height: calc(100vh - 60px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 28px 16px;
+}
+
+.auth-shell {
+  width: min(980px, 100%);
+  display: grid;
+  grid-template-columns: 1.05fr 0.95fr;
+  border-radius: 26px;
+  overflow: hidden;
+  box-shadow: 0 18px 50px rgba(15, 23, 42, 0.14);
+  background: #fff;
+}
+
+/* 모바일 */
+@media (max-width: 860px) {
+  .auth-shell {
+    grid-template-columns: 1fr;
+  }
+  .auth-brand {
+    display: none;
+  }
+}
+
+/* 왼쪽 */
+.auth-brand {
+  position: relative;
+  padding: 44px;
+  background: radial-gradient(circle at 10% 10%, #eef2ff, transparent 55%),
+    radial-gradient(circle at 80% 20%, #fce7f3, transparent 50%),
+    radial-gradient(circle at 60% 90%, #fff7ed, transparent 55%),
+    linear-gradient(180deg, #ffffff, #fbfbff);
+}
+
+.auth-brand-inner {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.auth-logo {
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  font-size: 20px;
+  color: #111827;
+}
+
+.auth-brand-badge {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #0f766e;
+  background: rgba(16, 185, 129, 0.12);
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-weight: 700;
+}
+
+.auth-brand-title {
+  margin-top: 8px;
+  font-size: 34px;
+  line-height: 1.15;
+  letter-spacing: -0.04em;
+  color: #111827;
+}
+
+.auth-brand-desc {
+  font-size: 14px;
+  color: #6b7280;
+  line-height: 1.7;
+}
+
+.auth-brand-card {
+  margin-top: auto;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(226, 232, 240, 0.8);
+  padding: 14px;
+  backdrop-filter: blur(10px);
+}
+
+.auth-brand-card-row {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.7);
+}
+
+.auth-brand-card-line {
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(226, 232, 240, 0.9);
+  margin-bottom: 8px;
+}
+.auth-brand-card-line.short {
+  width: 68%;
+}
+
+/* 오른쪽 */
+.auth-form {
+  padding: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(180deg, #ffffff, #fafbff);
+}
+
+.auth-card {
+  width: 100%;
+  max-width: 420px;
+  border-radius: 22px;
+  padding: 22px;
+  border: 1px solid #eef2f7;
+  background: #ffffff;
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.06);
+}
+
+.auth-top {
+  margin-bottom: 14px;
+}
+
+.auth-title {
+  font-size: 22px;
+  font-weight: 800;
+  color: #111827;
+  margin-bottom: 6px;
+}
+
+.auth-subtitle {
+  font-size: 13px;
+  color: #6b7280;
+}
+
+.auth-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  background: #f3f4f6;
+  padding: 6px;
+  border-radius: 14px;
+  margin: 14px 0;
+}
+
+.auth-tab {
+  border: 0;
+  background: transparent;
+  padding: 10px 10px;
+  border-radius: 12px;
+  font-weight: 700;
+  color: #6b7280;
+  cursor: pointer;
+}
+
+.auth-tab.active {
+  background: #ffffff;
+  color: #111827;
+  box-shadow: 0 6px 14px rgba(15, 23, 42, 0.08);
+}
+
+.auth-alert {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #991b1b;
+  padding: 10px 12px;
+  border-radius: 12px;
+  font-size: 13px;
+  margin-bottom: 12px;
+}
+
+.auth-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.field span {
+  display: block;
+  font-size: 12px;
+  font-weight: 700;
+  color: #374151;
+  margin-bottom: 6px;
+}
+
+.field input,
+.field textarea {
+  width: 100%;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 12px 12px;
+  outline: none;
+  font-size: 14px;
+  background: #fff;
+}
+
+.field input:focus,
+.field textarea:focus {
+  border-color: #a5b4fc;
+  box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.14);
+}
+
+.auth-submit {
+  margin-top: 4px;
+  border: 0;
+  border-radius: 14px;
+  padding: 12px 14px;
+  font-weight: 800;
+  cursor: pointer;
+  color: #fff;
+  background: linear-gradient(135deg, #4f46e5, #7c3aed);
+  box-shadow: 0 14px 30px rgba(79, 70, 229, 0.24);
+}
+
+.auth-submit:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.auth-divider {
+  position: relative;
+  margin: 10px 0 2px;
+  text-align: center;
+  font-size: 12px;
+  color: #9ca3af;
+}
+.auth-divider span {
+  background: #fff;
+  padding: 0 10px;
+  position: relative;
+  z-index: 2;
+}
+.auth-divider:before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 1px;
+  background: #e5e7eb;
+  z-index: 1;
+}
+
+.auth-kakao {
+  border: 1px solid #f0d700;
+  border-radius: 14px;
+  padding: 12px 14px;
+  font-weight: 800;
+  cursor: pointer;
+  background: #fee500;
+  color: #111827;
+}
+
+.auth-footnote {
+  margin-top: 6px;
+  font-size: 11px;
+  color: #9ca3af;
+  line-height: 1.5;
+}

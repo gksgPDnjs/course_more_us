@@ -2,8 +2,6 @@
 import { useLocation, useNavigate } from "react-router-dom";
 import { useState, useEffect, useRef } from "react";
 import { SEOUL_REGIONS } from "./data/regions";
-import { fetchUnsplashHero } from "./api/unsplash";
-import { buildUnsplashKeyword } from "./api/unsplashKeyword";
 
 const API_BASE_URL = "http://localhost:4000";
 
@@ -20,10 +18,7 @@ function getPlaceInfo(placeObj) {
   }
 
   const name =
-    placeObj.place_name ||
-    placeObj.name ||
-    placeObj.place ||
-    "장소 이름 없음";
+    placeObj.place_name || placeObj.name || placeObj.place || "장소 이름 없음";
 
   const addr =
     placeObj.road_address_name ||
@@ -54,7 +49,7 @@ function AutoCourseDetail() {
   const [likeLoading, setLikeLoading] = useState(false);
   const [saveLoading, setSaveLoading] = useState(false);
 
-  // 🎨 대표 이미지 (Unsplash)
+  // 🎨 대표 이미지 (Kakao Image Search via backend proxy)
   const [heroUrl, setHeroUrl] = useState(null);
   const [heroLoading, setHeroLoading] = useState(false);
 
@@ -63,27 +58,63 @@ function AutoCourseDetail() {
   const [distances, setDistances] = useState([]); // [{ from, to, meters, minutes }]
 
   /* --------------------------------------
-     🔥 Unsplash 대표 이미지 로딩
+     🔥 Kakao 대표 이미지 로딩 (backend proxy)
+     - 1순위: 1단계 장소명 기반
+     - 2순위: 지역 라벨 기반
   -------------------------------------- */
   useEffect(() => {
-    if (!course) return; // 코스 없으면 아무 것도 안 함
+    if (!course) return;
 
-    const keyword = buildUnsplashKeyword({
-      ...course,
-      city: course.regionId, // city 필드 강제 매핑
-    });
-
-    console.log("🧩 AutoCourseDetail Unsplash keyword:", keyword);
+    let cancelled = false;
 
     async function loadHero() {
-      setHeroLoading(true);
-      const url = await fetchUnsplashHero(keyword);
-      console.log("🎨 AutoCourseDetail heroUrl:", url);
-      setHeroUrl(url);
-      setHeroLoading(false);
+      try {
+        setHeroLoading(true);
+
+        const firstStep = course.steps?.[0];
+        const firstPlace = firstStep?.place || firstStep || {};
+        const placeName =
+          firstPlace.place_name || firstPlace.name || firstPlace.place || "";
+
+        const regionLabel = getRegionLabel(course.regionId);
+
+        // ✅ 검색어 우선순위: (장소명 + 지역) -> (지역 + 데이트 코스)
+        const q1 = placeName ? `${placeName} ${regionLabel || "서울"}` : "";
+        const q2 = `${regionLabel || "서울"} 데이트 코스`;
+
+        const tryQueries = [q1, q2].filter(Boolean);
+
+        for (const q of tryQueries) {
+          const params = new URLSearchParams({ query: q });
+          const res = await fetch(
+            `${API_BASE_URL}/api/kakao/image?${params.toString()}`
+          );
+          const data = await res.json().catch(() => ({}));
+
+          if (cancelled) return;
+          if (res.ok && data?.imageUrl) {
+            setHeroUrl(data.imageUrl);
+            return;
+          }
+        }
+
+        // 못 찾으면 null 유지
+        setHeroUrl(null);
+      } catch (e) {
+        if (!cancelled) {
+          console.warn("AutoCourseDetail Kakao hero load failed:", e);
+          setHeroUrl(null);
+        }
+      } finally {
+        if (!cancelled) setHeroLoading(false);
+      }
     }
 
     loadHero();
+
+    return () => {
+      cancelled = true;
+    };
   }, [course]);
 
   /* --------------------------------------
@@ -140,23 +171,22 @@ function AutoCourseDetail() {
       path.push(position);
       bounds.extend(position);
 
-      // 기본 마커
       // place URL 불러오기
-    const placeObj = course.steps[idx].place || course.steps[idx];
-    const { url } = getPlaceInfo(placeObj);
+      const placeObj = course.steps[idx].place || course.steps[idx];
+      const { url } = getPlaceInfo(placeObj);
 
-    // 마커 생성
-    const marker = new kakao.maps.Marker({
-      position,
-      map,
-    });
+      // 마커 생성
+      const marker = new kakao.maps.Marker({
+        position,
+        map,
+      });
 
-// 🔥 마커 클릭 시 카카오맵 상세페이지 이동
-if (url) {
-  kakao.maps.event.addListener(marker, "click", () => {
-    window.open(url, "_blank");
-  });
-}
+      // 🔥 마커 클릭 시 카카오맵 상세페이지 이동
+      if (url) {
+        kakao.maps.event.addListener(marker, "click", () => {
+          window.open(url, "_blank");
+        });
+      }
 
       // 번호 뱃지 (커스텀 오버레이)
       const overlayContent = `
@@ -192,7 +222,7 @@ if (url) {
       const polyline = new kakao.maps.Polyline({
         path,
         strokeWeight: 4,
-        strokeColor: "#f97316", // 주황계열
+        strokeColor: "#f97316",
         strokeOpacity: 0.8,
         strokeStyle: "solid",
       });
@@ -207,10 +237,10 @@ if (url) {
           path: [path[i], path[i + 1]],
         });
         const meters = segmentLine.getLength();
-        const minutes = Math.max(1, Math.round(meters / 67)); // 약 4km/h 보행 속도 기준
+        const minutes = Math.max(1, Math.round(meters / 67)); // 약 4km/h
 
         newDistances.push({
-          from: i, // i번째 step → i+1번째 step
+          from: i,
           to: i + 1,
           meters,
           minutes,
@@ -220,12 +250,8 @@ if (url) {
 
     setDistances(newDistances);
 
-    // cleanup은 굳이 안 해도 되지만, 참고로 남겨둠
-    return () => {
-      // map 객체는 페이지 이동 시 GC에 의해 정리됨
-    };
+    return () => {};
   }, [course]);
-  //------------------------------------
 
   // 🔴 여기서부터는 훅 없음 — 조건부 return 가능
   if (!course) {
@@ -293,7 +319,6 @@ if (url) {
         steps: mappedSteps,
       };
 
-      // 🔥 자동 코스는 `/api/courses/auto` 로 저장
       const res = await fetch(`${API_BASE_URL}/api/courses/auto`, {
         method: "POST",
         headers: {
@@ -313,9 +338,7 @@ if (url) {
       return data._id;
     } catch (err) {
       console.error("ensureSavedCourse error:", err);
-      alert(
-        err.message || "자동 생성 코스를 저장하는 중 오류가 발생했어요."
-      );
+      alert(err.message || "자동 생성 코스를 저장하는 중 오류가 발생했어요.");
       return null;
     } finally {
       setSaveLoading(false);
@@ -325,7 +348,6 @@ if (url) {
   const handleSaveMyCourse = async () => {
     const id = await ensureSavedCourse();
     if (!id) return;
-
     alert("내 코스에 저장했어요! (자동 생성 코스)");
   };
 
@@ -341,15 +363,12 @@ if (url) {
     try {
       setLikeLoading(true);
 
-      const res = await fetch(
-        `${API_BASE_URL}/api/courses/${realId}/like`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      );
+      const res = await fetch(`${API_BASE_URL}/api/courses/${realId}/like`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
 
       const data = await res.json().catch(() => ({}));
 
@@ -366,24 +385,28 @@ if (url) {
     }
   };
 
-  /* --------------------------------------
-     ✅ 여기부터 UI (코스 카드 + 지도 + 거리)
-  -------------------------------------- */
   return (
     <div className="auto-detail-page">
       {/* 상단 히어로 카드 */}
       <section className="auto-detail-hero">
         <div className="auto-detail-hero-image-wrap">
           <div className="auto-detail-hero-bg" />
+
           {!heroLoading && heroUrl && (
             <img
               src={heroUrl}
               alt="자동 생성 코스 대표 이미지"
               className="auto-detail-hero-image"
               onError={(e) => {
-                e.target.style.display = "none";
+                e.currentTarget.style.display = "none";
               }}
             />
+          )}
+
+          {heroLoading && (
+            <div style={{ padding: 16, color: "#6b7280", fontSize: 13 }}>
+              대표 이미지를 불러오는 중이에요...
+            </div>
           )}
         </div>
 
@@ -391,8 +414,7 @@ if (url) {
           <p className="auto-detail-badge">자동 추천 코스</p>
           <h1 className="auto-detail-title">{course.title}</h1>
           <p className="auto-detail-submeta">
-            📍 {regionLabel || "지역 정보 없음"} · 총 {totalSteps}
-            단계 코스
+            📍 {regionLabel || "지역 정보 없음"} · 총 {totalSteps}단계 코스
           </p>
 
           <div className="auto-detail-hero-buttons">
@@ -427,13 +449,7 @@ if (url) {
         >
           오늘 코스 지도
         </h2>
-        <p
-          style={{
-            fontSize: 13,
-            color: "#6b7280",
-            marginBottom: 12,
-          }}
-        >
+        <p style={{ fontSize: 13, color: "#6b7280", marginBottom: 12 }}>
           각 단계 위치와 동선을 한 눈에 볼 수 있어요.
         </p>
         <div
@@ -453,8 +469,8 @@ if (url) {
         <div className="auto-detail-body-header">
           <h2 className="auto-detail-section-title">데이트 코스 타임라인</h2>
           <p className="auto-detail-section-desc">
-            카카오맵 기반으로 자동 추천된 코스예요. 마음에 들면 위 버튼으로
-            내 코스에 저장해 둘 수 있어요.
+            카카오맵 기반으로 자동 추천된 코스예요. 마음에 들면 위 버튼으로 내
+            코스에 저장해 둘 수 있어요.
           </p>
         </div>
 
@@ -464,15 +480,12 @@ if (url) {
             const placeObj = step.place || step;
             const { name, addr, url } = getPlaceInfo(placeObj);
 
-            // 이 단계에서 "다음 장소까지 거리" 정보 (마지막 단계는 없음)
             const dist = distances.find((d) => d.from === index);
 
             return (
               <li key={index} className="auto-detail-step-card">
-                {/* 왼쪽 번호 동그라미 */}
                 <div className="auto-detail-step-icon">{stepNo}</div>
 
-                {/* 내용 */}
                 <div className="auto-detail-step-body">
                   <h3 className="auto-detail-step-title">
                     {step.label || step.type || "코스"}
@@ -482,7 +495,6 @@ if (url) {
                     {addr || "주소 정보 없음"}
                   </p>
 
-                  {/* 다음 장소까지 거리 표시 */}
                   {dist && (
                     <p
                       className="auto-detail-step-distance"
@@ -492,9 +504,8 @@ if (url) {
                         marginTop: 4,
                       }}
                     >
-                      다음 장소까지 도보 약{" "}
-                      <strong>{dist.minutes}분</strong> (
-                      {Math.round(dist.meters)}m)
+                      다음 장소까지 도보 약 <strong>{dist.minutes}분</strong>{" "}
+                      ({Math.round(dist.meters)}m)
                     </p>
                   )}
 
