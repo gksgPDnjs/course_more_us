@@ -14,14 +14,28 @@ function resolveImageUrl(raw) {
   return raw;
 }
 
-// ✅ 카카오 이미지 프록시(백엔드)로 썸네일 1장 받아오기
+/** ✅ 자동 코스 상세 새로고침 대비 sessionStorage 저장 */
+function persistAutoCourseForDetail(course) {
+  if (!course || !course.id) return;
+  try {
+    sessionStorage.setItem(`autoCourse:${course.id}`, JSON.stringify(course));
+  } catch (e) {
+    console.warn("persistAutoCourseForDetail failed:", e);
+  }
+}
+
+/**
+ * ✅ 카카오 이미지 프록시로 썸네일 1장 받아오기
+ * - IMPORTANT: 프록시/리라이트 타려면 /api 로 호출해야 안정적임
+ */
 async function fetchKakaoImageUrl(query) {
   const q = String(query || "").trim();
   if (!q) return null;
 
   try {
     const params = new URLSearchParams({ query: q });
-    const res = await fetch(`${API_BASE_URL}/api/kakao/image?${params.toString()}`);
+    // ✅ 여기 핵심: /api 로 통일
+    const res = await fetch(`/api/kakao/image?${params.toString()}`);
     const data = await res.json().catch(() => ({}));
     if (!res.ok) return null;
     return data.imageUrl || null;
@@ -57,6 +71,62 @@ function useAuth() {
   return { currentUser, token, currentUserId, isLoggedIn };
 }
 
+/* -------------------- 자동 코스 생성 안정화 유틸 -------------------- */
+
+const PLACE_BLACKLIST = /(스터디|독서실|학원|공부|독학|고시원)/i;
+const CAFE_REGEX = /(카페|coffee|커피|브런치|디저트|베이커리)/i;
+const NOT_CAFE_REGEX = /(카페|coffee|커피|디저트|베이커리)/i;
+
+function dedupeById(list) {
+  const seen = new Set();
+  const out = [];
+  for (const item of list || []) {
+    const id = item?.id;
+    if (!id) continue;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    out.push(item);
+  }
+  return out;
+}
+
+function pickRandomFromTop(list, topN = 6) {
+  if (!Array.isArray(list) || list.length === 0) return null;
+  const limit = Math.min(list.length, topN);
+  return list[Math.floor(Math.random() * limit)];
+}
+
+function filterPlacesByCategory(docs, keyword) {
+  if (!docs || docs.length === 0) return [];
+  let filtered = (docs || []).filter((p) => !PLACE_BLACKLIST.test(p.place_name || ""));
+
+  if (keyword.includes("카페") || keyword.includes("커피")) {
+    const onlyCafe = filtered.filter((p) => CAFE_REGEX.test(p.place_name || ""));
+    if (onlyCafe.length > 0) filtered = onlyCafe;
+  } else if (keyword.includes("맛집") || keyword.includes("식당") || keyword.includes("밥집")) {
+    const onlyFood = filtered.filter((p) => !NOT_CAFE_REGEX.test(p.place_name || ""));
+    if (onlyFood.length > 0) filtered = onlyFood;
+  }
+
+  return filtered.length ? filtered : docs;
+}
+
+function safeCenter(center) {
+  const x = center?.x;
+  const y = center?.y;
+  if (!x || !y) return null;
+  return { x, y };
+}
+
+function placeToCenter(place, fallback) {
+  const x = place?.x;
+  const y = place?.y;
+  if (x && y) return { x, y };
+  return fallback || null;
+}
+
+/* ------------------ RecommendPage ------------------ */
+
 function RecommendPage() {
   const { token, isLoggedIn } = useAuth();
 
@@ -74,6 +144,8 @@ function RecommendPage() {
 
   // auto courses
   const [autoCourses, setAutoCourses] = useState([]);
+  const [autoLoading, setAutoLoading] = useState(false);
+  const [autoError, setAutoError] = useState("");
 
   // thumbnails cache
   const [cardImages, setCardImages] = useState({});
@@ -208,11 +280,19 @@ function RecommendPage() {
         const placeName = first?.place_name || first?.name || "";
         const regionLabel = getRegionLabel(course.regionId);
 
-        const q = (
-          placeName ? `${placeName} ${regionLabel || "서울"}` : `${regionLabel || "서울"} 데이트 코스`
-        ).trim();
+        // ✅ 이미지 쿼리 fallback 2~3개
+        const q1 = placeName ? `${placeName} ${regionLabel || "서울"}` : "";
+        const q2 = `${regionLabel || "서울"} 데이트 코스`;
+        const q3 = `${regionLabel || "서울"} 카페`;
 
-        const url = await fetchKakaoImageUrl(q);
+        const tryQueries = [q1, q2, q3].filter(Boolean);
+
+        let url = null;
+        for (const q of tryQueries) {
+          url = await fetchKakaoImageUrl(q);
+          if (url) break;
+        }
+
         if (url) updates[course.id] = url;
       }
 
@@ -264,7 +344,7 @@ function RecommendPage() {
   };
 
   // -------------------- 카카오 장소 검색 --------------------
-  async function callKakaoSearch({ keyword, x, y, radius = 5000, size = 15 }) {
+  async function callKakaoSearch({ keyword, x, y, radius = 6000, size = 15 }) {
     const params = new URLSearchParams({ query: keyword, size: String(size) });
 
     if (x && y) {
@@ -273,7 +353,8 @@ function RecommendPage() {
       params.append("radius", String(radius));
     }
 
-    const res = await fetch(`${API_BASE_URL}/api/kakao/search?${params.toString()}`);
+    // ✅ 프록시/리라이트 안정화: /api 로 통일
+    const res = await fetch(`/api/kakao/search?${params.toString()}`);
     const data = await res.json().catch(() => ({}));
 
     if (!res.ok) {
@@ -304,11 +385,11 @@ function RecommendPage() {
 
       const results = await Promise.all(
         keywords.map((keyword) =>
-          callKakaoSearch({ keyword, x, y, radius: 5000, size: 10 }).catch(() => [])
+          callKakaoSearch({ keyword, x, y, radius: 7000, size: 10 }).catch(() => [])
         )
       );
 
-      const merged = results.flat();
+      const merged = dedupeById(results.flat());
 
       if (merged.length === 0) {
         setKakaoPlaces([]);
@@ -316,16 +397,7 @@ function RecommendPage() {
         return;
       }
 
-      const seen = new Set();
-      const unique = [];
-      for (const place of merged) {
-        if (!place.id) continue;
-        if (seen.has(place.id)) continue;
-        if (blacklistRegex.test(place.place_name || "")) continue;
-        seen.add(place.id);
-        unique.push(place);
-      }
-
+      const unique = merged.filter((p) => !blacklistRegex.test(p.place_name || ""));
       setKakaoPlaces(unique.slice(0, 20));
     } catch (err) {
       console.error(err);
@@ -335,107 +407,124 @@ function RecommendPage() {
     }
   };
 
-  // -------------------- 자동 코스 --------------------
-  const PLACE_BLACKLIST = /(스터디|독서실|학원|공부|독학|고시원)/i;
-  const CAFE_REGEX = /(카페|coffee|커피|브런치|디저트)/i;
-  const NOT_CAFE_REGEX = /(카페|coffee|커피|디저트|베이커리)/i;
-
-  function filterPlacesByCategory(docs, keyword) {
-    if (!docs || docs.length === 0) return [];
-    let filtered = docs.filter((p) => !PLACE_BLACKLIST.test(p.place_name || ""));
-
-    if (keyword.includes("카페")) {
-      const onlyCafe = filtered.filter((p) => CAFE_REGEX.test(p.place_name || ""));
-      if (onlyCafe.length > 0) filtered = onlyCafe;
-    } else if (keyword.includes("맛집")) {
-      const onlyFood = filtered.filter((p) => !NOT_CAFE_REGEX.test(p.place_name || ""));
-      if (onlyFood.length > 0) filtered = onlyFood;
-    }
-
-    if (filtered.length === 0) return docs;
-    return filtered;
-  }
-
-  async function searchByCategoryWithCenter(center, keyword, radius = 5000, size = 15) {
-    const { x, y } = center || {};
-
+  // -------------------- 자동 코스 (안 뜨는 경우 해결 버전) --------------------
+  async function searchByCategoryWithCenter(center, keyword, radius = 6000, size = 15) {
+    const c = safeCenter(center);
     const docs = await callKakaoSearch({
       keyword,
-      x: x && y ? x : undefined,
-      y: x && y ? y : undefined,
-      radius: x && y ? radius : undefined,
+      x: c?.x,
+      y: c?.y,
+      radius,
       size,
     }).catch(() => []);
 
     if (!docs || docs.length === 0) return null;
 
     const filtered = filterPlacesByCategory(docs, keyword);
-    const limit = Math.min(filtered.length, 5);
-    const idx = Math.floor(Math.random() * limit);
-    return filtered[idx];
+    return pickRandomFromTop(filtered, 6);
   }
 
+  /** ✅ 자동 코스 생성: 3번 재시도 + 키워드 다양화 + radius 확장 */
   const fetchAutoCourse = async (regionId) => {
+    if (regionId === "all") {
+      alert("먼저 상단에서 특정 지역을 선택해 주세요!");
+      return;
+    }
+
+    const region = SEOUL_REGIONS.find((r) => r.id === regionId);
+    if (!region) {
+      alert("선택한 지역 정보를 찾을 수 없어요.");
+      return;
+    }
+
+    setAutoLoading(true);
+    setAutoError("");
+
+    const baseName = getRegionMainName(region);
+    const regionCenter = safeCenter(region.center);
+
+    const cafeKeywords = [`${baseName} 카페`, `${baseName} 커피`, `${baseName} 디저트`, `${baseName} 베이커리`];
+    const foodKeywords = [`${baseName} 맛집`, `${baseName} 식당`, `${baseName} 밥집`];
+    const spotKeywords = [`${baseName} 데이트`, `${baseName} 놀거리`, `${baseName} 공원`, `${baseName} 전시`];
+
     try {
-      const region = SEOUL_REGIONS.find((r) => r.id === regionId);
-      if (!region) {
-        alert("선택한 지역 정보를 찾을 수 없어요.");
-        return;
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        // 1) 카페: region center에서 radius 점점 확대
+        const cafe =
+          (await searchByCategoryWithCenter(regionCenter, cafeKeywords[0], 6000)) ||
+          (await searchByCategoryWithCenter(regionCenter, cafeKeywords[1], 8000)) ||
+          (await searchByCategoryWithCenter(regionCenter, cafeKeywords[2], 9000)) ||
+          (await searchByCategoryWithCenter(regionCenter, cafeKeywords[3], 10000));
+
+        if (!cafe) {
+          if (attempt === 3) {
+            setAutoError("이 지역에서 카페 후보를 찾지 못했어요. 다른 지역도 한번 시도해볼래요?");
+          }
+          continue;
+        }
+
+        // 2) 맛집: 카페 근처 우선, 없으면 센터로
+        const cafeCenter = placeToCenter(cafe, regionCenter);
+
+        let food =
+          (await searchByCategoryWithCenter(cafeCenter, foodKeywords[0], 2000)) ||
+          (await searchByCategoryWithCenter(cafeCenter, foodKeywords[1], 3000)) ||
+          (await searchByCategoryWithCenter(regionCenter, foodKeywords[0], 8000));
+
+        // 3) 볼거리: 맛집 근처 > 카페 근처 > 센터
+        const spotCenter = placeToCenter(food, cafeCenter) || regionCenter;
+
+        let spot =
+          (await searchByCategoryWithCenter(spotCenter, spotKeywords[0], 2500)) ||
+          (await searchByCategoryWithCenter(spotCenter, spotKeywords[1], 3500)) ||
+          (await searchByCategoryWithCenter(regionCenter, spotKeywords[0], 9000));
+
+        const steps = [
+          cafe && { type: "cafe", label: "카페", place: cafe },
+          food && { type: "food", label: "식사", place: food },
+          spot && { type: "spot", label: "볼거리", place: spot },
+        ].filter(Boolean);
+
+        if (steps.length < 2) {
+          // 2단계 미만이면 “안뜸”으로 느껴져서 재시도
+          if (attempt === 3) setAutoError("후보가 너무 적게 잡혀요. 다시 한번 눌러보거나 다른 지역을 선택해봐요!");
+          continue;
+        }
+
+        // ✅ 대표 이미지(랜덤 코스처럼) 잘 뜨게: 쿼리 2~3개로 fallback
+        const firstPlaceName = steps?.[0]?.place?.place_name || "";
+        const regionLabel = region.label || "서울";
+
+        const q1 = firstPlaceName ? `${firstPlaceName} ${regionLabel}` : "";
+        const q2 = `${regionLabel} 데이트 코스`;
+        const q3 = `${regionLabel} 카페`;
+
+        const queries = [q1, q2, q3].filter(Boolean);
+
+        let heroImageUrl = null;
+        for (const q of queries) {
+          heroImageUrl = await fetchKakaoImageUrl(q);
+          if (heroImageUrl) break;
+        }
+
+        const course = {
+          id: `auto-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          title: `${region.label} 자동 데이트 코스`,
+          regionId,
+          createdAt: new Date().toISOString(),
+          steps,
+          heroImageUrl: heroImageUrl || null,
+        };
+
+        setAutoCourses((prev) => [course, ...prev]);
+        setAutoLoading(false);
+        return; // 성공하면 종료
       }
-
-      const baseName = getRegionMainName(region);
-
-      const cafe = await searchByCategoryWithCenter(region.center, `${baseName} 카페`, 5000);
-      if (!cafe) {
-        alert("이 지역에서 카페 후보를 찾지 못했어요 ㅠㅠ");
-        return;
-      }
-
-      let food = await searchByCategoryWithCenter({ x: cafe.x, y: cafe.y }, `${baseName} 맛집`, 1000);
-      if (!food) {
-        food = await searchByCategoryWithCenter(region.center, `${baseName} 맛집`, 5000);
-      }
-
-      let spotCenter;
-      if (food?.x && food?.y) spotCenter = { x: food.x, y: food.y };
-      else if (cafe?.x && cafe?.y) spotCenter = { x: cafe.x, y: cafe.y };
-      else spotCenter = region.center;
-
-      let spot = await searchByCategoryWithCenter(spotCenter, `${baseName} 데이트 코스`, 2000);
-      if (!spot) {
-        spot = await searchByCategoryWithCenter(region.center, `${baseName} 데이트 코스`, 5000);
-      }
-
-      const steps = [
-        cafe && { type: "cafe", label: "카페", place: cafe },
-        food && { type: "food", label: "식사", place: food },
-        spot && { type: "spot", label: "볼거리", place: spot },
-      ].filter(Boolean);
-
-      if (steps.length === 0) {
-        alert("이 지역 근처에서 후보를 못 찾았어요. 다른 지역도 한번 시도해 볼래요?");
-        return;
-      }
-
-      const course = {
-        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        title: `${region.label} 자동 데이트 코스`,
-        regionId,
-        createdAt: new Date().toISOString(),
-        steps,
-        heroImageUrl: null,
-      };
-
-      const firstPlaceName = steps?.[0]?.place?.place_name || "";
-      const thumbQuery = firstPlaceName ? `${firstPlaceName} ${region.label}` : `${region.label} 데이트 코스`;
-
-      const heroImageUrl = await fetchKakaoImageUrl(thumbQuery);
-      if (heroImageUrl) course.heroImageUrl = heroImageUrl;
-
-      setAutoCourses((prev) => [course, ...prev]);
     } catch (err) {
       console.error("자동 코스 생성 에러:", err);
-      alert(err.message || "자동 코스를 만드는 중 오류가 발생했어요.");
+      setAutoError(err.message || "자동 코스를 만드는 중 오류가 발생했어요.");
+    } finally {
+      setAutoLoading(false);
     }
   };
 
@@ -478,6 +567,7 @@ function RecommendPage() {
               setSelectedRegionId("all");
               setKakaoPlaces([]);
               setAutoCourses([]);
+              setAutoError("");
             }}
           >
             서울 전체
@@ -492,6 +582,7 @@ function RecommendPage() {
                 setSelectedRegionId(region.id);
                 setKakaoPlaces([]);
                 setAutoCourses([]);
+                setAutoError("");
               }}
             >
               {region.label}
@@ -605,18 +696,19 @@ function RecommendPage() {
 
             <button
               type="button"
-              className="rounded-full border border-violet-200 bg-violet-600 px-5 py-2 text-sm font-extrabold text-white shadow-sm hover:bg-violet-700"
-              onClick={() => {
-                if (selectedRegionId === "all") {
-                  alert("먼저 상단에서 특정 지역을 선택해 주세요!");
-                  return;
-                }
-                fetchAutoCourse(selectedRegionId);
-              }}
+              className="rounded-full border border-violet-200 bg-violet-600 px-5 py-2 text-sm font-extrabold text-white shadow-sm hover:bg-violet-700 disabled:opacity-60"
+              disabled={autoLoading}
+              onClick={() => fetchAutoCourse(selectedRegionId)}
             >
-              자동 데이트 코스 만들기
+              {autoLoading ? "만드는 중..." : "자동 데이트 코스 만들기"}
             </button>
           </div>
+
+          {autoError && (
+            <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
+              {autoError}
+            </div>
+          )}
 
           {autoCourses.length === 0 ? (
             <div className="rounded-3xl border border-slate-200 bg-white/60 p-6 text-sm font-semibold text-slate-600">
@@ -630,6 +722,7 @@ function RecommendPage() {
                   course={course}
                   index={index}
                   imageUrl={course.heroImageUrl || autoCardImages[course.id] || null}
+                  onBeforeGoDetail={() => persistAutoCourseForDetail(course)}
                 />
               ))}
             </div>
@@ -722,7 +815,7 @@ function RecommendPage() {
 }
 
 /* ===================== 자동 코스 카드 (Tailwind 버전) ===================== */
-function AutoCourseCardTW({ course, index, imageUrl }) {
+function AutoCourseCardTW({ course, index, imageUrl, onBeforeGoDetail }) {
   const firstStep = course.steps?.[0];
   const placeObj = firstStep?.place || firstStep || {};
   const firstName =
@@ -731,11 +824,16 @@ function AutoCourseCardTW({ course, index, imageUrl }) {
   const stepsCount = course.steps?.length || 0;
 
   return (
-    <Link to={`/auto-courses/${course.id}`} state={{ course }} className="block">
+    <Link
+      to={`/auto-courses/${course.id}`}
+      state={{ course }}
+      className="block"
+      onClick={() => onBeforeGoDetail?.()}
+    >
       <article className="group overflow-hidden rounded-2xl border border-slate-200 bg-white/70 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
         {/* 이미지 */}
         <div className="relative aspect-video w-full overflow-hidden bg-gradient-to-br from-violet-100 via-fuchsia-100 to-sky-100">
-          {imageUrl && (
+          {imageUrl ? (
             <img
               src={imageUrl}
               alt={course.title}
@@ -745,6 +843,10 @@ function AutoCourseCardTW({ course, index, imageUrl }) {
                 e.currentTarget.style.display = "none";
               }}
             />
+          ) : (
+            <div className="flex h-full items-center justify-center text-sm font-semibold text-slate-600">
+              이미지 준비중…
+            </div>
           )}
 
           {/* 배지 */}

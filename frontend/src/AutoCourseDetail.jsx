@@ -1,14 +1,23 @@
 // src/AutoCourseDetail.jsx
-import { useLocation, useNavigate } from "react-router-dom";
-import { useState, useEffect, useRef } from "react";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { SEOUL_REGIONS } from "./data/regions";
 import { API_BASE_URL } from "./config";
-//const API_BASE_URL = "http://localhost:4000";
+
+// -------------------- utils --------------------
 
 function getRegionLabel(cityId) {
   if (!cityId) return "";
   const region = SEOUL_REGIONS.find((r) => r.id === cityId);
   return region ? region.label : cityId;
+}
+
+// ✅ 업로드(/uploads/...)만 백엔드 오리진이 필요함
+function resolveImageUrl(raw) {
+  if (!raw) return null;
+  if (/^https?:\/\//.test(raw)) return raw;
+  if (raw.startsWith("/uploads/")) return `${API_BASE_URL}${raw}`;
+  return raw;
 }
 
 // 🔎 Kakao place → 이름/주소/URL 정리 + URL 보정
@@ -36,11 +45,28 @@ function getPlaceInfo(placeObj) {
   return { name, addr, url };
 }
 
+// -------------------- component --------------------
+
 function AutoCourseDetail() {
   const location = useLocation();
   const navigate = useNavigate();
+  const { autoId } = useParams();
 
-  const course = location.state?.course;
+  // ✅ 1) state로 들어온 코스 우선
+  // ✅ 2) 새로고침/직접접속 대비: sessionStorage에서 복구
+  const course = useMemo(() => {
+    const fromState = location.state?.course;
+    if (fromState) return fromState;
+
+    try {
+      const saved = sessionStorage.getItem(`autoCourse:${autoId}`);
+      return saved ? JSON.parse(saved) : null;
+    } catch (e) {
+      console.warn("AutoCourseDetail sessionStorage parse failed:", e);
+      return null;
+    }
+  }, [location.state, autoId]);
+
   const token = localStorage.getItem("token");
 
   // ✅ 저장/찜 관련 상태
@@ -60,8 +86,8 @@ function AutoCourseDetail() {
   /* --------------------------------------
      ✅ 대표 이미지 로딩 우선순위
      0) course.heroImage (백엔드가 내려준 대표)
-     1) course.steps[0].place.imageUrl (백엔드가 내려준 step 이미지)
-     2) 없으면 /api/kakao/image 로 fallback 검색
+     1) course.steps[0].place.imageUrl (step 이미지)
+     2) 없으면 /api/kakao/image 로 fallback 검색 (프록시)
   -------------------------------------- */
   useEffect(() => {
     if (!course) return;
@@ -72,21 +98,22 @@ function AutoCourseDetail() {
       try {
         setHeroLoading(true);
 
-        // ✅ 0순위: 백엔드가 내려준 heroImage
-        if (course?.heroImage) {
-          if (!cancelled) setHeroUrl(course.heroImage);
+        // ✅ 0순위: heroImage
+        const h0 = resolveImageUrl(course?.heroImage);
+        if (h0) {
+          if (!cancelled) setHeroUrl(h0);
           return;
         }
 
-        // ✅ 1순위: 1단계 place.imageUrl
+        // ✅ 1순위: step0 imageUrl
         const step0 = course?.steps?.[0];
-        const step0Img = step0?.place?.imageUrl || step0?.imageUrl;
+        const step0Img = resolveImageUrl(step0?.place?.imageUrl || step0?.imageUrl);
         if (step0Img) {
           if (!cancelled) setHeroUrl(step0Img);
           return;
         }
 
-        // ✅ 2순위: fallback (카카오 이미지 검색 proxy)
+        // ✅ 2순위: fallback (카카오 이미지 검색 proxy) - /api 로 통일!
         const firstPlace = step0?.place || step0 || {};
         const placeName =
           firstPlace.place_name || firstPlace.name || firstPlace.place || "";
@@ -95,14 +122,11 @@ function AutoCourseDetail() {
 
         const q1 = placeName ? `${placeName} ${regionLabel || "서울"}` : "";
         const q2 = `${regionLabel || "서울"} 데이트 코스`;
-
         const tryQueries = [q1, q2].filter(Boolean);
 
         for (const q of tryQueries) {
           const params = new URLSearchParams({ query: q });
-          const res = await fetch(
-            `${API_BASE_URL}/api/kakao/image?${params.toString()}`
-          );
+          const res = await fetch(`/api/kakao/image?${params.toString()}`);
           const data = await res.json().catch(() => ({}));
 
           if (cancelled) return;
@@ -113,7 +137,6 @@ function AutoCourseDetail() {
           }
         }
 
-        // 못 찾으면 null 유지
         if (!cancelled) setHeroUrl(null);
       } catch (e) {
         if (!cancelled) {
@@ -126,7 +149,6 @@ function AutoCourseDetail() {
     }
 
     loadHero();
-
     return () => {
       cancelled = true;
     };
@@ -232,7 +254,7 @@ function AutoCourseDetail() {
           path: [path[i], path[i + 1]],
         });
         const meters = segmentLine.getLength();
-        const minutes = Math.max(1, Math.round(meters / 67));
+        const minutes = Math.max(1, Math.round(meters / 67)); // 대충 도보 4km/h
 
         newDistances.push({ from: i, to: i + 1, meters, minutes });
       }
@@ -241,12 +263,14 @@ function AutoCourseDetail() {
     setDistances(newDistances);
   }, [course]);
 
+  // -------------------- no course fallback --------------------
+
   if (!course) {
     return (
       <section className="card" style={{ padding: 20 }}>
         <h2 className="section-title">자동 생성 코스 상세</h2>
         <p style={{ marginTop: 10 }}>
-          이 페이지는 추천 페이지에서 자동 생성된 코스를 통해서만 열 수 있어요.
+          이 페이지는 추천/랜덤에서 만든 자동 코스로 들어왔을 때만 열 수 있어요.
           <br />
           <button
             className="btn btn-secondary btn-sm"
@@ -264,7 +288,7 @@ function AutoCourseDetail() {
   const totalSteps = course.steps?.length || 0;
 
   // ------------------------------------------------
-  // 1. 자동 코스를 실제 "내 코스"로 저장
+  // 1) 자동 코스를 실제 "내 코스"로 저장
   // ------------------------------------------------
   const ensureSavedCourse = async () => {
     if (savedCourseId) return savedCourseId;
@@ -305,6 +329,7 @@ function AutoCourseDetail() {
         steps: mappedSteps,
       };
 
+      // ⚠️ 저장/찜/내 코스 관련은 백엔드 직접 호출(API_BASE_URL) 유지
       const res = await fetch(`${API_BASE_URL}/api/courses/auto`, {
         method: "POST",
         headers: {
@@ -369,6 +394,8 @@ function AutoCourseDetail() {
     }
   };
 
+  // -------------------- render --------------------
+
   return (
     <div className="auto-detail-page">
       {/* 상단 히어로 카드 */}
@@ -406,9 +433,7 @@ function AutoCourseDetail() {
               type="button"
               onClick={handleToggleLike}
               disabled={likeLoading}
-              className={`btn btn-secondary btn-sm auto-detail-like-btn ${
-                liked ? "liked" : ""
-              }`}
+              className={`btn btn-secondary btn-sm auto-detail-like-btn ${liked ? "liked" : ""}`}
             >
               {liked ? "💜 찜해둔 코스" : "🤍 찜하기"}
             </button>
@@ -427,10 +452,7 @@ function AutoCourseDetail() {
 
       {/* 🗺️ 코스 전체를 보여주는 지도 */}
       <section className="card" style={{ marginTop: 16, padding: 16 }}>
-        <h2
-          className="auto-detail-section-title"
-          style={{ marginBottom: 8, fontSize: 16 }}
-        >
+        <h2 className="auto-detail-section-title" style={{ marginBottom: 8, fontSize: 16 }}>
           오늘 코스 지도
         </h2>
         <p style={{ fontSize: 13, color: "#6b7280", marginBottom: 12 }}>
@@ -453,8 +475,7 @@ function AutoCourseDetail() {
         <div className="auto-detail-body-header">
           <h2 className="auto-detail-section-title">데이트 코스 타임라인</h2>
           <p className="auto-detail-section-desc">
-            카카오맵 기반으로 자동 추천된 코스예요. 마음에 들면 위 버튼으로 내
-            코스에 저장해 둘 수 있어요.
+            카카오맵 기반으로 자동 추천된 코스예요. 마음에 들면 위 버튼으로 내 코스에 저장해 둘 수 있어요.
           </p>
         </div>
 
@@ -474,21 +495,14 @@ function AutoCourseDetail() {
                     {step.label || step.type || "코스"}
                   </h3>
                   <p className="auto-detail-step-name">{name}</p>
-                  <p className="auto-detail-step-addr">
-                    {addr || "주소 정보 없음"}
-                  </p>
+                  <p className="auto-detail-step-addr">{addr || "주소 정보 없음"}</p>
 
                   {dist && (
                     <p
                       className="auto-detail-step-distance"
-                      style={{
-                        fontSize: 12,
-                        color: "#6b7280",
-                        marginTop: 4,
-                      }}
+                      style={{ fontSize: 12, color: "#6b7280", marginTop: 4 }}
                     >
-                      다음 장소까지 도보 약 <strong>{dist.minutes}분</strong>{" "}
-                      ({Math.round(dist.meters)}m)
+                      다음 장소까지 도보 약 <strong>{dist.minutes}분</strong> ({Math.round(dist.meters)}m)
                     </p>
                   )}
 
@@ -509,10 +523,7 @@ function AutoCourseDetail() {
         </ul>
 
         <div className="auto-detail-bottom-actions">
-          <button
-            className="btn btn-secondary btn-sm"
-            onClick={() => navigate(-1)}
-          >
+          <button className="btn btn-secondary btn-sm" onClick={() => navigate(-1)}>
             ← 추천 목록으로 돌아가기
           </button>
         </div>

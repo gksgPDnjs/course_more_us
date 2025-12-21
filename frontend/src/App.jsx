@@ -376,17 +376,7 @@ function CourseListPage() {
 }
 
 /* ===================== 새 코스 등록 페이지 ===================== */
-
-const MOOD_OPTIONS = [
-  { value: "", label: "선택하지 않음" },
-  { value: "감성", label: "감성 / 분위기" },
-  { value: "힐링", label: "힐링 / 조용한" },
-  { value: "먹방", label: "먹방 / 맛집" },
-  { value: "활동적인", label: "활동적인 / 체험" },
-  { value: "데이트", label: "전형적인 데이트" },
-  { value: "특별한날", label: "기념일 / 특별한 날" },
-];
-
+/* ===================== 새 코스 등록 페이지 (카카오 검색/선택 포함) ===================== */
 function NewCoursePage() {
   const { token, isLoggedIn } = useAuth();
   const navigate = useNavigate();
@@ -399,21 +389,74 @@ function NewCoursePage() {
   const [heroImageUrl, setHeroImageUrl] = useState("");
 
   const [steps, setSteps] = useState([
-    { title: "1단계", place: "", memo: "", time: "", budget: "" },
-    { title: "2단계", place: "", memo: "", time: "", budget: "" },
+    {
+      title: "1단계",
+      place: "",
+      address: "",
+      kakaoUrl: "",
+      memo: "",
+      time: "",
+      budget: "",
+      x: "",
+      y: "",
+    },
+    {
+      title: "2단계",
+      place: "",
+      address: "",
+      kakaoUrl: "",
+      memo: "",
+      time: "",
+      budget: "",
+      x: "",
+      y: "",
+    },
   ]);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
+  // ✅ mood 옵션 (App.jsx 안에 같이 있어야 함)
+  const MOOD_OPTIONS = [
+    { value: "", label: "선택하지 않음" },
+    { value: "감성", label: "감성 / 분위기" },
+    { value: "힐링", label: "힐링 / 조용한" },
+    { value: "먹방", label: "먹방 / 맛집" },
+    { value: "활동적인", label: "활동적인 / 체험" },
+    { value: "데이트", label: "전형적인 데이트" },
+    { value: "특별한날", label: "기념일 / 특별한 날" },
+  ];
+
+  // ✅ 카카오맵 링크에서 placeId 추출
+  function extractKakaoPlaceIdFromUrl(url) {
+    if (!url) return "";
+    const m = String(url).match(/place\.map\.kakao\.com\/(\d+)/);
+    return m ? m[1] : "";
+  }
+
   const handleStepChange = (index, field, value) => {
-    setSteps((prev) => prev.map((s, i) => (i === index ? { ...s, [field]: value } : s)));
+    setSteps((prev) =>
+      prev.map((s, i) => (i === index ? { ...s, [field]: value } : s))
+    );
   };
 
   const addStep = () => {
     if (steps.length >= 4) return;
     const next = steps.length + 1;
-    setSteps((prev) => [...prev, { title: `${next}단계`, place: "", memo: "", time: "", budget: "" }]);
+    setSteps((prev) => [
+      ...prev,
+      {
+        title: `${next}단계`,
+        place: "",
+        address: "",
+        kakaoUrl: "",
+        memo: "",
+        time: "",
+        budget: "",
+        x: "",
+        y: "",
+      },
+    ]);
   };
 
   const removeStep = (idx) => {
@@ -435,9 +478,20 @@ function NewCoursePage() {
       return;
     }
 
+    // ✅ 최소 place는 있어야 저장
     const cleanedSteps = steps
-      .map((s) => ({ ...s, budget: s.budget ? Number(s.budget) : 0 }))
-      .filter((s) => s.place.trim());
+      .map((s) => {
+        const kakaoPlaceId = extractKakaoPlaceIdFromUrl(s.kakaoUrl);
+        return {
+          ...s,
+          budget: s.budget ? Number(s.budget) : 0,
+          kakaoPlaceId: kakaoPlaceId || s.kakaoPlaceId || "",
+          // 좌표는 지금은 선택(비워도 됨)
+          x: s.x ? Number(s.x) : undefined,
+          y: s.y ? Number(s.y) : undefined,
+        };
+      })
+      .filter((s) => String(s.place || "").trim());
 
     if (cleanedSteps.length === 0) {
       setError("최소 1개의 장소는 입력해야 합니다.");
@@ -446,6 +500,7 @@ function NewCoursePage() {
 
     setLoading(true);
 
+    // ✅ 대표 이미지: URL 우선, 없으면 파일 업로드 시도
     let finalImageUrl = heroImageUrl.trim() || null;
 
     if (!finalImageUrl && heroImageFile) {
@@ -491,14 +546,35 @@ function NewCoursePage() {
       alert("코스가 등록되었습니다!");
       navigate("/");
 
+      // reset
       setTitle("");
       setCityId(SEOUL_REGIONS[0].id);
       setMood("");
       setHeroImageFile(null);
       setHeroImageUrl("");
       setSteps([
-        { title: "1단계", place: "", memo: "", time: "", budget: "" },
-        { title: "2단계", place: "", memo: "", time: "", budget: "" },
+        {
+          title: "1단계",
+          place: "",
+          address: "",
+          kakaoUrl: "",
+          memo: "",
+          time: "",
+          budget: "",
+          x: "",
+          y: "",
+        },
+        {
+          title: "2단계",
+          place: "",
+          address: "",
+          kakaoUrl: "",
+          memo: "",
+          time: "",
+          budget: "",
+          x: "",
+          y: "",
+        },
       ]);
     } catch (err) {
       console.error(err);
@@ -554,7 +630,9 @@ function NewCoursePage() {
         </div>
 
         <div style={{ marginTop: 12 }}>
-          <label style={{ fontSize: 13, fontWeight: 600 }}>대표 이미지 업로드 (선택)</label>
+          <label style={{ fontSize: 13, fontWeight: 600 }}>
+            대표 이미지 업로드 (선택)
+          </label>
           <input
             type="file"
             accept="image/*"
@@ -614,6 +692,27 @@ function NewCoursePage() {
               required={i === 0}
             />
 
+            {/* ✅ 주소 직접 입력 */}
+            <input
+              className="input"
+              placeholder="주소 (직접 입력 / 카카오에서 복사)"
+              value={step.address}
+              onChange={(e) => handleStepChange(i, "address", e.target.value)}
+              style={{ marginTop: 6 }}
+            />
+
+            {/* ✅ 카카오맵 링크 직접 입력 */}
+            <input
+              className="input"
+              placeholder="카카오맵 장소 링크 (예: https://place.map.kakao.com/123456789)"
+              value={step.kakaoUrl}
+              onChange={(e) => handleStepChange(i, "kakaoUrl", e.target.value)}
+              style={{ marginTop: 6 }}
+            />
+            <p style={{ fontSize: 12, color: "#6b7280", marginTop: 4 }}>
+              * 카카오맵에서 “링크 복사”해서 붙여넣으면 나중에 상세에서 바로 열 수 있어요.
+            </p>
+
             <input
               className="input"
               placeholder="시간 (예: 14:00)"
@@ -638,6 +737,24 @@ function NewCoursePage() {
               rows={2}
               style={{ marginTop: 6 }}
             />
+
+            {/* (선택) 좌표 직접 입력: 지금은 숨겨도 됨 */}
+            {/* 
+            <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
+              <input
+                className="input"
+                placeholder="x(lng) (선택)"
+                value={step.x}
+                onChange={(e) => handleStepChange(i, "x", e.target.value)}
+              />
+              <input
+                className="input"
+                placeholder="y(lat) (선택)"
+                value={step.y}
+                onChange={(e) => handleStepChange(i, "y", e.target.value)}
+              />
+            </div>
+            */}
           </div>
         ))}
 

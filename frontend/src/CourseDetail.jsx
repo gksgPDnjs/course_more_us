@@ -1,37 +1,29 @@
 // src/CourseDetail.jsx
 import { useParams, Link } from "react-router-dom";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { SEOUL_REGIONS } from "./data/regions";
 import { fetchUnsplashHero } from "./api/unsplash";
 import { buildUnsplashKeyword } from "./api/unsplashKeyword";
 import { API_BASE_URL } from "./config";
-//const API_BASE_URL = "http://localhost:4000";
 
-/** 업로드 이미지 / 일반 URL을 모두 처리하는 헬퍼 */
+/** 업로드 이미지(/uploads/...)만 백엔드 오리진 필요 */
 function resolveImageUrl(url) {
   if (!url) return null;
-  if (url.startsWith("http")) return url; // 이미 완전한 주소면 그대로
-  return `${API_BASE_URL}${url}`; // /uploads/xxx → http://localhost:4000/uploads/xxx
+  if (/^https?:\/\//.test(url)) return url;
+  if (url.startsWith("/uploads/")) return `${API_BASE_URL}${url}`;
+  return url;
 }
 
-// city(지역 id) -> 라벨 변환
 function getRegionLabel(cityId) {
   if (!cityId) return "";
   const region = SEOUL_REGIONS.find((r) => r.id === cityId);
   return region ? region.label : cityId;
 }
 
-// 🔎 스텝 정보 정리 + 카카오맵 URL 보정
+// 🔎 스텝 정보 정리 + 카카오맵 URL 보정 + (있으면) 좌표도 뽑기
 function getStepInfo(step) {
   if (!step) {
-    return {
-      name: "장소 미입력",
-      addr: "",
-      url: "",
-      time: "",
-      budget: 0,
-      memo: "",
-    };
+    return { name: "장소 미입력", addr: "", url: "", time: "", budget: 0, memo: "", x: null, y: null };
   }
 
   const name = step.place || step.title || "장소 미입력";
@@ -39,9 +31,11 @@ function getStepInfo(step) {
 
   let url = step.kakaoUrl || step.url || "";
   const placeId = step.kakaoPlaceId || step.placeId;
-  if (!url && placeId) {
-    url = `https://place.map.kakao.com/${placeId}`;
-  }
+  if (!url && placeId) url = `https://place.map.kakao.com/${placeId}`;
+
+  // ✅ (추후 카카오 검색으로 고를 때 저장해두면 지도 가능)
+  const x = step.x ?? step.lng ?? null;
+  const y = step.y ?? step.lat ?? null;
 
   return {
     name,
@@ -50,11 +44,13 @@ function getStepInfo(step) {
     time: step.time || "",
     budget: step.budget ?? 0,
     memo: step.memo || "",
+    x,
+    y,
   };
 }
 
 function CourseDetail() {
-  const { id } = useParams(); // /courses/:id
+  const { id } = useParams();
   const [course, setCourse] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -64,79 +60,81 @@ function CourseDetail() {
   const [likeLoading, setLikeLoading] = useState(false);
   const [likeError, setLikeError] = useState("");
 
-  // 🔐 로그인한 사용자 + 토큰
+  // 🔐 로그인 정보
   const savedUser = localStorage.getItem("currentUser");
   const currentUser = savedUser ? JSON.parse(savedUser) : null;
   const token = localStorage.getItem("token");
+  const currentUserId = currentUser && (currentUser.id || currentUser._id || currentUser.userId);
 
-  const currentUserId =
-    currentUser && (currentUser.id || currentUser._id || currentUser.userId);
-
-  // 내가 작성한 코스인지 여부
-  const isOwner =
-    !!currentUserId && course && String(currentUserId) === String(course.owner);
-
-  // 🎨 대표 이미지 (업로드 or Unsplash)
+  // 🎨 대표 이미지
   const [heroUrl, setHeroUrl] = useState(null);
   const [heroLoading, setHeroLoading] = useState(false);
 
-  // ❤️ 이 코스가 내가 찜한 코스인지 확인
+  // 🗺️ 지도
+  const mapRef = useRef(null);
+
+  const isOwner = useMemo(() => {
+    if (!currentUserId || !course) return false;
+    return String(currentUserId) === String(course.owner);
+  }, [currentUserId, course]);
+
+  const hasSteps = useMemo(
+    () => Array.isArray(course?.steps) && course.steps.length > 0,
+    [course]
+  );
+
+  // ✅ 훅은 조건부로 호출하면 안됨 → 여기서 항상 계산
+  const mapPoints = useMemo(() => {
+    if (!course?.steps?.length) return [];
+    return course.steps
+      .map((s) => {
+        const info = getStepInfo(s);
+        const x = parseFloat(info.x);
+        const y = parseFloat(info.y);
+        if (Number.isNaN(x) || Number.isNaN(y)) return null;
+        return { lng: x, lat: y, name: info.name, url: info.url };
+      })
+      .filter(Boolean);
+  }, [course]);
+
+  const hasAnyCoords = useMemo(() => mapPoints.length >= 1, [mapPoints]);
+
   const fetchLikedState = async (courseId) => {
     if (!token) return;
 
     try {
       const res = await fetch(`${API_BASE_URL}/api/courses/liked/me`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          Accept: "application/json",
-        },
+        headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
       });
 
       const list = await res.json().catch(() => []);
+      if (!res.ok) return;
 
-      if (!res.ok) {
-        console.error("liked/me error:", list);
-        return;
-      }
-
-      const exists =
-        Array.isArray(list) &&
-        list.some((c) => String(c._id) === String(courseId));
-
+      const exists = Array.isArray(list) && list.some((c) => String(c._id) === String(courseId));
       setLiked(exists);
     } catch (err) {
       console.error("fetchLikedState error:", err);
     }
   };
 
-  // ❤️ 찜 토글
   const handleToggleLike = async () => {
     if (!token) {
       alert("로그인 후 찜할 수 있어요.");
       return;
     }
-    if (!course || !course._id) return;
+    if (!course?._id) return;
 
     try {
       setLikeLoading(true);
       setLikeError("");
 
-      const res = await fetch(
-        `${API_BASE_URL}/api/courses/${course._id}/like`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            Accept: "application/json",
-          },
-        }
-      );
+      const res = await fetch(`${API_BASE_URL}/api/courses/${course._id}/like`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+      });
 
       const data = await res.json().catch(() => ({}));
-
-      if (!res.ok) {
-        throw new Error(data.message || "찜 처리 실패");
-      }
+      if (!res.ok) throw new Error(data.message || "찜 처리 실패");
 
       setLiked(Boolean(data.liked));
     } catch (err) {
@@ -148,24 +146,18 @@ function CourseDetail() {
     }
   };
 
-  // 👀 최근 본 코스 기록
   const recordRecentView = async (courseId) => {
     if (!token) return;
-
     try {
       await fetch(`${API_BASE_URL}/api/courses/${courseId}/view`, {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          Accept: "application/json",
-        },
+        headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
       });
     } catch (err) {
       console.error("recordRecentView error:", err);
     }
   };
 
-  // 특정 코스 불러오기
   const fetchCourse = async () => {
     try {
       setLoading(true);
@@ -174,17 +166,12 @@ function CourseDetail() {
       const res = await fetch(`${API_BASE_URL}/api/courses/${id}`);
       const data = await res.json().catch(() => null);
 
-      if (!res.ok || !data) {
-        throw new Error(data?.message || "코스를 불러오지 못했어요.");
-      }
+      if (!res.ok || !data) throw new Error(data?.message || "코스를 불러오지 못했어요.");
 
       setCourse(data);
 
       const courseId = data._id || id;
-      await Promise.all([
-        fetchLikedState(courseId),
-        recordRecentView(courseId),
-      ]);
+      await Promise.all([fetchLikedState(courseId), recordRecentView(courseId)]);
     } catch (err) {
       console.error("Error fetching course:", err);
       setError(err.message || "코스를 불러오는 중 오류가 발생했어요.");
@@ -193,26 +180,20 @@ function CourseDetail() {
     }
   };
 
-  // 삭제 기능
   const handleDelete = async () => {
     if (!token) {
       alert("로그인이 필요합니다.");
       return;
     }
-
     if (!window.confirm("정말 삭제할까요?")) return;
 
     try {
       const res = await fetch(`${API_BASE_URL}/api/courses/${id}`, {
         method: "DELETE",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          Accept: "application/json",
-        },
+        headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
       });
 
       const data = await res.json().catch(() => ({}));
-
       if (!res.ok) {
         alert(data.message || "삭제 실패 😢");
         return;
@@ -220,27 +201,22 @@ function CourseDetail() {
 
       alert("삭제되었습니다.");
       window.location.href = "/";
-    } catch (error) {
-      console.error("Delete error:", error);
+    } catch (err) {
+      console.error("Delete error:", err);
       alert("삭제 실패 😢");
     }
   };
 
-  // 코스 데이터 최초 로딩
   useEffect(() => {
     fetchCourse();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
-  /* --------------------------------------
-     🔥 대표 이미지 로딩 (업로드 > Unsplash)
-  -------------------------------------- */
+  // 대표 이미지 로딩 (업로드 > Unsplash)
   useEffect(() => {
     if (!course) return;
 
-    const manualRaw =
-      course.heroImageUrl || course.imageUrl || course.thumbnailUrl || "";
-
+    const manualRaw = course.heroImageUrl || course.imageUrl || course.thumbnailUrl || "";
     const manualResolved = resolveImageUrl(manualRaw);
 
     if (manualResolved) {
@@ -250,35 +226,74 @@ function CourseDetail() {
     }
 
     const keyword = buildUnsplashKeyword(course);
-    console.log("🧩 CourseDetail에서 만든 Unsplash keyword:", keyword);
-
     let cancelled = false;
 
     async function loadHero() {
       try {
         setHeroLoading(true);
         const url = await fetchUnsplashHero(keyword);
-        if (!cancelled) {
-          console.log("🎨 CourseDetail에서 받은 heroUrl:", url);
-          setHeroUrl(url);
-        }
+        if (!cancelled) setHeroUrl(url);
       } catch (e) {
-        if (!cancelled) {
-          console.warn("CourseDetail Unsplash 실패:", e);
-        }
+        if (!cancelled) console.warn("CourseDetail Unsplash 실패:", e);
       } finally {
         if (!cancelled) setHeroLoading(false);
       }
     }
 
     loadHero();
-
     return () => {
       cancelled = true;
     };
   }, [course]);
 
-  // 로딩 / 에러 처리
+  // ✅ 지도 렌더 (좌표가 있을 때만)
+  useEffect(() => {
+    if (!hasAnyCoords) return;
+    if (!mapRef.current) return;
+    if (!window.kakao || !window.kakao.maps) return;
+
+    const { kakao } = window;
+
+    const center = new kakao.maps.LatLng(mapPoints[0].lat, mapPoints[0].lng);
+    const map = new kakao.maps.Map(mapRef.current, { center, level: 4 });
+
+    const bounds = new kakao.maps.LatLngBounds();
+    const path = [];
+
+    mapPoints.forEach((p, idx) => {
+      const pos = new kakao.maps.LatLng(p.lat, p.lng);
+      bounds.extend(pos);
+      path.push(pos);
+
+      const marker = new kakao.maps.Marker({ position: pos, map });
+
+      if (p.url) {
+        kakao.maps.event.addListener(marker, "click", () => window.open(p.url, "_blank"));
+      }
+
+      const overlayContent = `
+        <div style="background:#111827;color:#fff;border-radius:999px;padding:4px 8px;font-size:12px;font-weight:700;transform:translateY(-8px);box-shadow:0 2px 6px rgba(0,0,0,0.2);">
+          ${idx + 1}단계
+        </div>
+      `;
+      new kakao.maps.CustomOverlay({ position: pos, content: overlayContent, yAnchor: 1, map });
+    });
+
+    map.setBounds(bounds, 40, 40, 40, 40);
+
+    if (path.length >= 2) {
+      const polyline = new kakao.maps.Polyline({
+        path,
+        strokeWeight: 4,
+        strokeColor: "#f97316",
+        strokeOpacity: 0.85,
+        strokeStyle: "solid",
+      });
+      polyline.setMap(map);
+    }
+  }, [hasAnyCoords, mapPoints]);
+
+  // ====== 로딩/에러 렌더 ======
   if (loading) {
     return (
       <div className="app">
@@ -291,21 +306,18 @@ function CourseDetail() {
     return (
       <div className="app">
         <p>{error || "코스를 찾을 수 없습니다."}</p>
-        <Link to="/" className="btn btn-secondary">
-          ← 목록으로
-        </Link>
+        <Link to="/" className="btn btn-secondary">← 목록으로</Link>
       </div>
     );
   }
 
   const regionLabel = getRegionLabel(course.city || course.location);
-  const hasSteps = Array.isArray(course.steps) && course.steps.length > 0;
   const totalSteps = hasSteps ? course.steps.length : 0;
   const moodLabel = course.mood || "내 코스";
 
   return (
     <div className="auto-detail-page">
-      {/* ===== 상단 히어로 영역 (Auto와 동일 레이아웃) ===== */}
+      {/* 상단 히어로 */}
       <section className="auto-detail-hero">
         <div className="auto-detail-hero-image-wrap">
           <div className="auto-detail-hero-bg" />
@@ -314,9 +326,7 @@ function CourseDetail() {
               src={heroUrl}
               alt="코스 대표 이미지"
               className="auto-detail-hero-image"
-              onError={(e) => {
-                e.target.style.display = "none";
-              }}
+              onError={(e) => { e.currentTarget.style.display = "none"; }}
             />
           )}
         </div>
@@ -330,11 +340,7 @@ function CourseDetail() {
           </p>
 
           <div className="auto-detail-hero-buttons">
-            <Link
-              to="/"
-              className="btn btn-secondary btn-sm"
-              style={{ fontSize: 12 }}
-            >
+            <Link to="/" className="btn btn-secondary btn-sm" style={{ fontSize: 12 }}>
               ← 코스 목록으로
             </Link>
 
@@ -343,20 +349,14 @@ function CourseDetail() {
                 type="button"
                 onClick={handleToggleLike}
                 disabled={likeLoading}
-                className={`btn btn-secondary btn-sm auto-detail-like-btn ${
-                  liked ? "liked" : ""
-                }`}
+                className={`btn btn-secondary btn-sm auto-detail-like-btn ${liked ? "liked" : ""}`}
               >
                 {liked ? "💜 찜해둔 코스" : "🤍 찜하기"}
               </button>
             )}
 
             {isOwner && (
-              <button
-                type="button"
-                onClick={handleDelete}
-                className="btn btn-danger btn-sm"
-              >
+              <button type="button" onClick={handleDelete} className="btn btn-danger btn-sm">
                 삭제
               </button>
             )}
@@ -364,21 +364,38 @@ function CourseDetail() {
         </div>
       </section>
 
-      {/* ===== 아래: 타임라인 영역도 Auto 스타일로 ===== */}
+      {/* ✅ 지도 (좌표 있을 때만 노출) */}
+      {hasAnyCoords && (
+        <section className="card" style={{ marginTop: 16, padding: 16 }}>
+          <h2 className="auto-detail-section-title" style={{ marginBottom: 8, fontSize: 16 }}>
+            오늘 코스 지도
+          </h2>
+          <p style={{ fontSize: 13, color: "#6b7280", marginBottom: 12 }}>
+            각 단계 위치와 동선을 한 눈에 볼 수 있어요.
+          </p>
+          <div
+            ref={mapRef}
+            style={{
+              width: "100%",
+              height: "260px",
+              borderRadius: 16,
+              overflow: "hidden",
+              background: "#e5e7eb",
+            }}
+          />
+        </section>
+      )}
+
+      {/* 타임라인 */}
       <section className="auto-detail-body card">
         <div className="auto-detail-body-header">
           <h2 className="auto-detail-section-title">데이트 코스 타임라인</h2>
           <p className="auto-detail-section-desc">
-            내가 직접 기록해 둔 데이트 코스예요. 다음에 또 가고 싶을 때
-            타임라인을 참고해 보세요.
+            내가 직접 기록해 둔 데이트 코스예요. 다음에 또 가고 싶을 때 타임라인을 참고해 보세요.
           </p>
         </div>
 
-        {likeError && (
-          <p style={{ marginTop: 4, fontSize: 12, color: "red" }}>
-            {likeError}
-          </p>
-        )}
+        {likeError && <p style={{ marginTop: 4, fontSize: 12, color: "red" }}>{likeError}</p>}
 
         {hasSteps ? (
           <ul className="auto-detail-step-list">
@@ -395,68 +412,29 @@ function CourseDetail() {
                     <h3 className="auto-detail-step-title">{label}</h3>
                     <p className="auto-detail-step-name">{info.name}</p>
 
-                    {info.addr && (
-                      <p className="auto-detail-step-addr">
-                        📍 {info.addr}
-                      </p>
-                    )}
+                    {info.addr && <p className="auto-detail-step-addr">📍 {info.addr}</p>}
 
-                    <div
-                      style={{
-                        display: "flex",
-                        flexWrap: "wrap",
-                        gap: 6,
-                        marginTop: 6,
-                        marginBottom: info.memo ? 8 : 0,
-                      }}
-                    >
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6, marginBottom: info.memo ? 8 : 0 }}>
                       {info.time && (
-                        <span
-                          style={{
-                            fontSize: 12,
-                            padding: "4px 8px",
-                            borderRadius: 999,
-                            backgroundColor: "#eef2ff",
-                            color: "#4f46e5",
-                          }}
-                        >
+                        <span style={{ fontSize: 12, padding: "4px 8px", borderRadius: 999, backgroundColor: "#eef2ff", color: "#4f46e5" }}>
                           ⏰ {info.time}
                         </span>
                       )}
                       {Number(info.budget) > 0 && (
-                        <span
-                          style={{
-                            fontSize: 12,
-                            padding: "4px 8px",
-                            borderRadius: 999,
-                            backgroundColor: "#ecfdf3",
-                            color: "#16a34a",
-                          }}
-                        >
+                        <span style={{ fontSize: 12, padding: "4px 8px", borderRadius: 999, backgroundColor: "#ecfdf3", color: "#16a34a" }}>
                           💸 {info.budget}원
                         </span>
                       )}
                     </div>
 
                     {info.memo && (
-                      <p
-                        style={{
-                          fontSize: 13,
-                          color: "#4b5563",
-                          whiteSpace: "pre-line",
-                        }}
-                      >
+                      <p style={{ fontSize: 13, color: "#4b5563", whiteSpace: "pre-line" }}>
                         {info.memo}
                       </p>
                     )}
 
                     {info.url && (
-                      <a
-                        href={info.url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="auto-detail-step-link"
-                      >
+                      <a href={info.url} target="_blank" rel="noreferrer" className="auto-detail-step-link">
                         카카오맵에서 보기 →
                       </a>
                     )}
@@ -467,23 +445,13 @@ function CourseDetail() {
           </ul>
         ) : (
           <>
-            {course.location && (
-              <p style={{ marginTop: 12, color: "#6b7280", fontSize: 14 }}>
-                📍 {course.location}
-              </p>
-            )}
-            {course.description && (
-              <p style={{ marginTop: 16, fontSize: 14 }}>
-                {course.description}
-              </p>
-            )}
+            {course.location && <p style={{ marginTop: 12, color: "#6b7280", fontSize: 14 }}>📍 {course.location}</p>}
+            {course.description && <p style={{ marginTop: 16, fontSize: 14 }}>{course.description}</p>}
           </>
         )}
 
         <div className="auto-detail-bottom-actions">
-          <Link to="/" className="btn btn-secondary btn-sm">
-            ← 코스 목록으로 돌아가기
-          </Link>
+          <Link to="/" className="btn btn-secondary btn-sm">← 코스 목록으로 돌아가기</Link>
         </div>
       </section>
     </div>
