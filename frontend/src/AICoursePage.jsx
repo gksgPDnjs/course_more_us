@@ -1,8 +1,8 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
-
-const API_BASE_URL = "http://localhost:4000";
+import { API_BASE_URL } from "./config";
+//const API_BASE_URL = "http://localhost:4000";
 
 function AICoursePage() {
   const navigate = useNavigate();

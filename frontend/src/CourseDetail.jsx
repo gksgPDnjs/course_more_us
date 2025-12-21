@@ -4,8 +4,8 @@ import { useEffect, useState } from "react";
 import { SEOUL_REGIONS } from "./data/regions";
 import { fetchUnsplashHero } from "./api/unsplash";
 import { buildUnsplashKeyword } from "./api/unsplashKeyword";
-
-const API_BASE_URL = "http://localhost:4000";
+import { API_BASE_URL } from "./config";
+//const API_BASE_URL = "http://localhost:4000";
 
 /** 업로드 이미지 / 일반 URL을 모두 처리하는 헬퍼 */
 function resolveImageUrl(url) {

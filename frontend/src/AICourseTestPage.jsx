@@ -1,8 +1,8 @@
 // src/pages/AICourseTestPage.jsx
 import { useState } from "react";
 import axios from "axios";
-
-const API_BASE_URL = "http://localhost:4000";
+import { API_BASE_URL } from "./config";
+//const API_BASE_URL = "http://localhost:4000";
 
 function AICourseTestPage() {
   const [loading, setLoading] = useState(false);

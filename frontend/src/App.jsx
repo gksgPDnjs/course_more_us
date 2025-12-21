@@ -24,8 +24,8 @@ import AICourseTestPage from "./AICourseTestPage.jsx";
 import AICoursePage from "./AICoursePage.jsx";
 import AICourseResult from "./AICourseResult.jsx";
 import AICourseDetail from "./AICourseDetail.jsx";
-
-const API_BASE_URL = "http://localhost:4000";
+import { API_BASE_URL } from "./config";
+//const API_BASE_URL = "http://localhost:4000";
 
 // 🔐 공통 로그인 훅
 function useAuth() {

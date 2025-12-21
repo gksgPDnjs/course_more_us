@@ -1,14 +1,16 @@
 // src/pages/LoginPage.jsx
 import { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-
+import { API_BASE_URL } from "./config";
 function LoginPage() {
   const navigate = useNavigate();
 
   // ✅ Vite proxy 쓰는 경우 fetch는 "/api/..." 로 호출
   // ✅ 카카오 로그인 리다이렉트는 백엔드 오리진이 필요 (프록시 X)
-  const BACKEND_ORIGIN =
-    import.meta.env.VITE_BACKEND_ORIGIN || "http://localhost:4000";
+  const BACKEND_ORIGIN = API_BASE_URL;
+  /*const BACKEND_ORIGIN =
+    import.meta.env.VITE_BACKEND_ORIGIN || "http://localhost:4000";*/
+  
 
   const [mode, setMode] = useState("login"); // "login" | "register"
   const [form, setForm] = useState({
@@ -143,7 +145,9 @@ function LoginPage() {
         <div className="grid items-center gap-10 lg:grid-cols-2">
           {/* 왼쪽: 브랜드 문구 (웹사이트 느낌) */}
           <section className="hidden lg:block">
-      
+            <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white/70 px-4 py-2 text-xs font-semibold text-slate-700 shadow-sm backdrop-blur">
+              ✨ BLOOM YOUR MOMENTS
+            </div>
 
             <h1 className="mt-4 text-4xl font-extrabold tracking-tight text-slate-900">
               마음에 드는 데이트 코스를

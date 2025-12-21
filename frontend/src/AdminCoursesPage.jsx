@@ -2,8 +2,8 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { SEOUL_REGIONS } from "./data/regions";
-
-const API_BASE_URL = "http://localhost:4000";
+import { API_BASE_URL } from "./config";
+//const API_BASE_URL = "http://localhost:4000";
 
 // 지역 id → 라벨
 function getRegionLabel(cityId) {

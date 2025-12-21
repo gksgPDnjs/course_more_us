@@ -2,10 +2,10 @@
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { SEOUL_REGIONS } from "./data/regions";
-
+import { API_BASE_URL } from "./config";
 import { fetchUnsplashHero } from "./api/unsplash";
 
-const API_BASE_URL = "http://localhost:4000";
+//const API_BASE_URL = "http://localhost:4000";
 const KAKAO_REST_KEY = import.meta.env.VITE_KAKAO_REST_KEY;
 
 /* ------------------ 공통 유틸 ------------------ */

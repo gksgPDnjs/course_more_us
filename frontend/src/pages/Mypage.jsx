@@ -5,8 +5,8 @@ import CourseCard from "../CourseCard";
 import { SEOUL_REGIONS } from "../data/regions";
 import { buildUnsplashKeyword } from "../api/unsplashKeyword";
 import { fetchUnsplashImage } from "../api/unsplash";
-
-const API_BASE_URL = "http://localhost:4000";
+import { API_BASE_URL } from "./config";
+//const API_BASE_URL = "http://localhost:4000";
 
 function resolveImageUrl(raw) {
   if (!raw) return null;
