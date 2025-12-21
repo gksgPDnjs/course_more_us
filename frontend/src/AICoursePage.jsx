@@ -46,7 +46,7 @@ function AICoursePage() {
       {
         key: "region",
         question: "어느 지역으로 갈까요?",
-        type: "chips", // ✅ pill(chips) UI
+        type: "buttons", // ✅ pill(chips) UI
         options: regionOptions,
       },
       {
