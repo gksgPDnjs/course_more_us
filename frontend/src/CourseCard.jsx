@@ -1,8 +1,8 @@
-// src/CourseCard.jsx
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { API_BASE_URL } from "./config";
 
-/** ✅ 채점용 하드코딩 이미지 (title 정확히 일치해야 함) */
+// ✅ 제목별 하드코딩 이미지 매핑
 const HARDCODED_IMAGES = {
   // 1열
   "퇴근후 교대 데이트": "/demo-images/song.png",
@@ -17,21 +17,14 @@ const HARDCODED_IMAGES = {
   "연남 이미지테스트": "/demo-images/yongsan.png",
 };
 
-/** 업로드 이미지(/uploads/...)만 백엔드 오리진 필요 */
+// ✅ 업로드 이미지(/uploads/...)만 백엔드 오리진 필요
 function resolveImageUrl(url) {
   if (!url) return null;
   if (/^https?:\/\//.test(url)) return url;
   if (url.startsWith("/uploads/")) return `${API_BASE_URL}${url}`;
-  return url; // /demo-images/... 같은 정적 경로 포함
+  return url; // /demo-images/... 같은 정적 경로
 }
 
-/**
- * 공통 코스 카드 컴포넌트
- *
- * props:
- * - to, mood, title, regionLabel, duration, budget, stepsCount, likesCount, firstStep
- * - imageUrl: (선택) 기존 방식 유지용. 없어도 title 하드코딩으로 대체됨.
- */
 function CourseCard({
   to,
   imageUrl,
@@ -46,25 +39,30 @@ function CourseCard({
   isLiked = false,
   onToggleLike,
 }) {
+  const hardcoded = useMemo(() => HARDCODED_IMAGES[title] || null, [title]);
+
+  // ✅ 1순위: DB imageUrl(업로드/외부URL) → 2순위: 하드코딩
+  const initialSrc = useMemo(() => {
+    const resolved = resolveImageUrl(imageUrl);
+    return resolved || hardcoded;
+  }, [imageUrl, hardcoded]);
+
+  const [imgSrc, setImgSrc] = useState(initialSrc);
+
+  // course list re-render 시 src 갱신
+  useEffect(() => {
+    setImgSrc(initialSrc);
+  }, [initialSrc]);
+
   const handleHeartClick = (e) => {
     e.preventDefault();
     e.stopPropagation();
-    if (onToggleLike) onToggleLike();
+    onToggleLike?.();
   };
-
-  // ✅ 1) 하드코딩 우선
-  const hardcoded = HARDCODED_IMAGES[title];
-
-  // ✅ 2) 하드코딩 없으면 기존 imageUrl(업로드/외부URL 등)
-  const finalImageUrl = hardcoded || resolveImageUrl(imageUrl);
 
   return (
     <li className="course-card-wrapper">
-      <Link
-        to={to}
-        className="course-card-link"
-        style={{ textDecoration: "none", color: "inherit" }}
-      >
+      <Link to={to} className="course-card-link" style={{ textDecoration: "none", color: "inherit" }}>
         <article className="course-card-outer">
           {/* 이미지 영역 */}
           <div className="course-card-image-wrap">
@@ -72,15 +70,20 @@ function CourseCard({
               {/* 그라디언트 배경 */}
               <div className="course-card-image-bg" />
 
-              {/* 대표 이미지 */}
-              {finalImageUrl && (
+              {/* ✅ 대표 이미지 */}
+              {imgSrc && (
                 <img
-                  src={finalImageUrl}
+                  src={imgSrc}
                   alt={title}
                   className="course-card-image"
-                  onError={(e) => {
-                    // 이미지 깨지면 그라디언트만 보이게
-                    e.currentTarget.style.display = "none";
+                  onError={() => {
+                    // ✅ 업로드 이미지가 깨지면 → 하드코딩 이미지로 대체
+                    if (hardcoded && imgSrc !== hardcoded) {
+                      setImgSrc(hardcoded);
+                      return;
+                    }
+                    // 하드코딩도 실패하면 그냥 이미지 없음 처리
+                    setImgSrc(null);
                   }}
                 />
               )}
@@ -88,7 +91,7 @@ function CourseCard({
               {/* 분위기 태그 */}
               {mood && <span className="course-card-mood-badge">{mood}</span>}
 
-              {/* ❤️ 찜 아이콘 */}
+              {/* ❤️ 찜 */}
               <button
                 type="button"
                 className={`course-card-like-badge ${isLiked ? "liked" : ""}`}
