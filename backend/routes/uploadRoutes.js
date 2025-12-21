@@ -25,7 +25,7 @@ router.post("/image", upload.single("image"), (req, res) => {
   }
 
   // 개발 환경용: 나중에 .env 로 빼도 됨
-  const BASE_URL = "http://localhost:4000";
+  const BASE_URL = process.env.BASE_URL || `http://localhost:${process.env.PORT || 4000}`;
 
   const url = `${BASE_URL}/uploads/${req.file.filename}`;
   res.json({ url });

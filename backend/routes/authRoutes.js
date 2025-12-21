@@ -13,7 +13,7 @@ dotenv.config();
 const router = express.Router();
 
 const KAKAO_REST_KEY = process.env.KAKAO_REST_KEY;
-const REDIRECT_URI = "http://localhost:4000/api/auth/kakao/callback";
+const REDIRECT_URI = process.env.KAKAO_REDIRECT_URI;;
 const FRONT_URL = process.env.FRONT_URL || "http://localhost:5173";
 
 /* ---------------- 카카오 로그인 ---------------- */
