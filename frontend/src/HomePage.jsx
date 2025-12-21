@@ -80,12 +80,7 @@ function HomePage() {
                 </Link>
 
                 {/* Tertiary: 랜덤 (보조 액션) */}
-                <Link
-                  to="/random"
-                  className="inline-flex items-center justify-center rounded-2xl border border-violet-200 bg-violet-50/70 px-5 py-3 text-sm font-semibold text-violet-700 shadow-sm backdrop-blur transition hover:bg-violet-50 hover:border-violet-300"
-                >
-                  🎲 오늘은 랜덤으로
-                </Link>
+                
               </div>
 
               {/* micro badges */}
